@@ -55,7 +55,7 @@ function setobservations( hmm::GaussianHMM, y::Vector{Float64} )
     hmm.scratch[:y] = y
 end
 
-function getobservations( hmm::GaussianHMM )
+function observations( hmm::GaussianHMM )
     if !haskey( hmm.scratch, :y )
         error( "Need to set observations in order to perform calculation" )
     end
@@ -64,43 +64,64 @@ end
 
 function pdfvalues( hmm::GaussianHMM )
     if !haskey( hmm.scratch, :b )
-        y = getobservations( hmm )
+        y = observations( hmm )
         hmm.scratch[:b] = [[pdf( Normal( hmm.means[i], hmm.stds[i] ), y[t] ) for i in 1:length(hmm.means)] for t in 1:length(y)]
     end
     return hmm.scratch[:b]
 end
 
 function forwardprobabilities( hmm::GaussianHMM )
-    y = getobservations( hmm )
-    N = length(hmm.initialprobabilities)
-    b = pdfvalues( hmm )
-    probabilities = [hmm.initialprobabilities .* b[1]]
-    for i = 2:length(y)
-        joint = hmm.transitionprobabilities' * probabilities[end] .* b[i]
-        push!( probabilities, joint )
+    if !haskey( hmm.scratch, :alpha )
+        y = observations( hmm )
+        N = length(hmm.initialprobabilities)
+        b = pdfvalues( hmm )
+        probabilities = [hmm.initialprobabilities .* b[1]]
+        for i = 2:length(y)
+            joint = hmm.transitionprobabilities' * probabilities[end] .* b[i]
+            push!( probabilities, joint )
+        end
+        hmm.scratch[:alpha] = probabilities
     end
-    return probabilities
+    return hmm.scratch[:alpha]
 end
 
 function backwardprobabilities( hmm::GaussianHMM )
-    y = getobservations( hmm )
-    N = length(hmm.initialprobabilities)
-    probabilities = [ones(length(hmm.initialprobabilities))]
-    b = pdfvalues( hmm )
-    for i = length(y):-1:2
-        joint = hmm.transitionprobabilities * (probabilities[end] .* b[i])
-        push!( probabilities, joint )
+    if !haskey( hmm.scratch, :beta )
+        y = observations( hmm )
+        N = length(hmm.initialprobabilities)
+        probabilities = [ones(length(hmm.initialprobabilities))]
+        b = pdfvalues( hmm )
+        for i = length(y):-1:2
+            joint = hmm.transitionprobabilities * (probabilities[end] .* b[i])
+            push!( probabilities, joint )
+        end
+        hmm.scratch[:beta] = reverse(probabilities)
     end
-    return reverse(probabilities)
+    return hmm.scratch[:beta]
 end
 
-function emstep( hmm::GaussianHMM )
-    y = getobservations( hmm )
-    alpha = forwardprobabilities( hmm, y )
-    beta = backwardprobabilities( hmm, y )
-    proby = sum(forward[end])
-    gamma = [alpha[i] .* beta[i]/proby for i in 1:length(alpha)]
-#    xi = [alpha[i]'*hmm.transitionprobabilities*(
+function conditionalstateprobabilities( hmm::GaussianHMM )
+    if !haskey( hmm.scratch, :gamma )
+        y = observations( hmm )
+        T = length(y)
+        alpha = forwardprobabilities( hmm )
+        beta = backwardprobabilities( hmm )
+        proby = sum(alpha[end])
+        hmm.scratch[:gamma] = [alpha[i] .* beta[i]/proby for i in 1:T-1]
+    end
+end
+
+function conditionaljointstateprobabilities( hmm::GaussianHMM )
+    if !haskey( hmm.scratch, :xi )
+        y = observations( hmm )
+        T = length(y)
+        alpha = forwardprobabilities( hmm )
+        beta = backwardprobabilities( hmm )
+        proby = sum(alpha[end])
+        b = pdfvalues( hmm )
+        hmm.scratch[:xi] = [hmm.transitionprobabilities.*(alpha[i]*(beta[i+1].*b[i+1])')/proby for i in 1:T-1]
+    end
+    return hmm.scratch[:xi]
 end
     
 end # module
