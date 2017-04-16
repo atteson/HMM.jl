@@ -50,16 +50,30 @@ function Base.rand( hmm::GaussianHMM, n::Int )
     return observations
 end
 
-function pdfvalues( hmm::GaussianHMM, y::Vector{Float64} )
+function setobservations( hmm::GaussianHMM, y::Vector{Float64} )
+    hmm.scratch = Dict{Symbol,Any}()
+    hmm.scratch[:y] = y
+end
+
+function getobservations( hmm::GaussianHMM )
+    if !haskey( hmm.scratch, :y )
+        error( "Need to set observations in order to perform calculation" )
+    end
+    return hmm.scratch[:y]
+end
+
+function pdfvalues( hmm::GaussianHMM )
     if !haskey( hmm.scratch, :b )
+        y = getobservations( hmm )
         hmm.scratch[:b] = [[pdf( Normal( hmm.means[i], hmm.stds[i] ), y[t] ) for i in 1:length(hmm.means)] for t in 1:length(y)]
     end
     return hmm.scratch[:b]
 end
 
-function forwardprobabilities( hmm::GaussianHMM, y::Vector{Float64} )
+function forwardprobabilities( hmm::GaussianHMM )
+    y = getobservations( hmm )
     N = length(hmm.initialprobabilities)
-    b = pdfvalues( hmm, y )
+    b = pdfvalues( hmm )
     probabilities = [hmm.initialprobabilities .* b[1]]
     for i = 2:length(y)
         joint = hmm.transitionprobabilities' * probabilities[end] .* b[i]
@@ -68,10 +82,11 @@ function forwardprobabilities( hmm::GaussianHMM, y::Vector{Float64} )
     return probabilities
 end
 
-function backwardprobabilities( hmm::GaussianHMM, y::Vector{Float64} )
+function backwardprobabilities( hmm::GaussianHMM )
+    y = getobservations( hmm )
     N = length(hmm.initialprobabilities)
     probabilities = [ones(length(hmm.initialprobabilities))]
-    b = pdfvalues( hmm, y )
+    b = pdfvalues( hmm )
     for i = length(y):-1:2
         joint = hmm.transitionprobabilities * (probabilities[end] .* b[i])
         push!( probabilities, joint )
@@ -79,7 +94,8 @@ function backwardprobabilities( hmm::GaussianHMM, y::Vector{Float64} )
     return reverse(probabilities)
 end
 
-function emstep( hmm::GaussianHMM, y::Vector{Float64} )
+function emstep( hmm::GaussianHMM )
+    y = getobservations( hmm )
     alpha = forwardprobabilities( hmm, y )
     beta = backwardprobabilities( hmm, y )
     proby = sum(forward[end])
