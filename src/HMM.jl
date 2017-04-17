@@ -100,14 +100,22 @@ function backwardprobabilities( hmm::GaussianHMM )
     return hmm.scratch[:beta]
 end
 
+function likelihood( hmm::GaussianHMM )
+    if !haskey( hmm.scratch, :likelihood )
+        alpha = forwardprobabilities( hmm )        
+        hmm.scratch[:likelihood] = sum(alpha[end])
+    end
+    return hmm.scratch[:likelihood]
+end
+
 function conditionalstateprobabilities( hmm::GaussianHMM )
     if !haskey( hmm.scratch, :gamma )
         y = observations( hmm )
         T = length(y)
         alpha = forwardprobabilities( hmm )
         beta = backwardprobabilities( hmm )
-        proby = sum(alpha[end])
-        hmm.scratch[:gamma] = [alpha[i] .* beta[i]/proby for i in 1:T-1]
+        proby = likelihood( hmm )
+        hmm.scratch[:gamma] = [alpha[i][j] * beta[i][j]/proby for i in 1:T, j in 1:length(alpha[1])]
     end
 end
 
@@ -117,11 +125,61 @@ function conditionaljointstateprobabilities( hmm::GaussianHMM )
         T = length(y)
         alpha = forwardprobabilities( hmm )
         beta = backwardprobabilities( hmm )
-        proby = sum(alpha[end])
+        proby = likelihood( hmm )
         b = pdfvalues( hmm )
         hmm.scratch[:xi] = [hmm.transitionprobabilities.*(alpha[i]*(beta[i+1].*b[i+1])')/proby for i in 1:T-1]
     end
     return hmm.scratch[:xi]
+end
+
+function emstep( hmm::GaussianHMM, nexthmm::GaussianHMM )
+    y = observations( hmm )
+    T = length(y)
+    gamma = conditionalstateprobabilities( hmm )
+    occupation = sum(gamma,1)
+    xi = conditionaljointstateprobabilities( hmm )
+    
+    nexthmm.initialprobabilities = gamma[1,:]
+    nexthmm.transitionprobabilities = sum(xi)./occupation
+    nexthmm.means = sum([gamma[i,:]*y[i] for i in 1:T])./vec(occupation)
+    nexthmm.stds = sqrt(sum([gamma[i,:].*(y[i] - hmm.means).^2 for i in 1:T])./vec(occupation))
+    
+    delete!( nexthmm.scratch, :alpha )
+    delete!( nexthmm.scratch, :beta )
+    delete!( nexthmm.scratch, :gamma )
+    delete!( nexthmm.scratch, :xi )
+    delete!( nexthmm.scratch, :b )
+    delete!( nexthmm.scratch, :likelihood )
+end
+
+function em( hmm::GaussianHMM, epsilon::Float64; debug::Bool=false )
+    nexthmm = randomhmm( hmm.graph )
+    setobservations( nexthmm, observations( hmm ) )
+    hmms = [hmm, nexthmm]
+    newlikelihood = likelihood( hmm )
+    done = false
+    i = 1
+    
+    while !done
+        if debug
+            println( "Likelihood = $newlikelihood" )
+        end
+        emstep( hmms[i], hmms[3-i] )
+        oldlikelihood = newlikelihood
+        done = !any(isnan(hmms[2-i].initialprobabilities)) && !any(isnan(hmms[2-i].transitionprobabilities)) &&
+            !any(isnan(hmms[2-i].means)) && !any(isnan(hmms[2-i].stds)) && !any(hmms[2-i].stds.<=0)
+        if !done
+            newlikelihood = likelihood( hmms[3-i] )
+            done = newlikelihood > oldlikelihood + epsilon
+        end
+        i = 3-i
+    end
+
+    hmm.initialprobabilities = hmms[3-i].initialprobabilities
+    hmm.transitionprobabilities = hmms[3-i].transitionprobabilities
+    hmm.means = hmms[3-i].means
+    hmm.stds = hmms[3-i].stds
+    hmm.scratch = hmms[3-i].scratch
 end
     
 end # module
