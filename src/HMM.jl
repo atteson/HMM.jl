@@ -14,26 +14,26 @@ end
 
 fullyconnected( n::Int ) = Digraph( vcat( [collect(1:n) for i in 1:n]... ), vcat( [fill(i,n) for i in 1:n]... ) )
 
-type GaussianHMM
+type GaussianHMM{T}
     graph::Digraph
-    initialprobabilities::Vector{Float64}
-    transitionprobabilities::Matrix{Float64}
-    means::Vector{Float64}
-    stds::Vector{Float64}
+    initialprobabilities::Vector{T}
+    transitionprobabilities::Matrix{T}
+    means::Vector{T}
+    stds::Vector{T}
     scratch::Dict{Symbol,Any}
-
-    GaussianHMM( g::Digraph, pi::Vector{Float64}, a::Matrix{Float64}, mu::Vector{Float64}, sigma::Vector{Float64} ) =
-        new( g, pi, a, mu, sigma, Dict{Symbol,Any}() )
 end
 
-function randomhmm( g::Digraph )
+GaussianHMM{T <: Real}( g::Digraph, pi::Vector{T}, a::Matrix{T}, mu::Vector{T}, sigma::Vector{T} ) =
+    GaussianHMM{T}( g, pi, a, mu, sigma, Dict{Symbol,Any}() )
+
+function randomhmm( g::Digraph; float::DataType = Float64 )
     numstates = max( maximum( g.from ), maximum( g.to ) )
-    initialprobabilities = rand( numstates )
+    initialprobabilities = Vector{float}(rand( numstates ))
     initialprobabilities ./= sum( initialprobabilities )
-    transitionprobabilities = rand( numstates, numstates )
+    transitionprobabilities = Matrix{float}(rand( numstates, numstates ))
     transitionprobabilities ./= sum( transitionprobabilities, 2 )
-    means = randn( numstates )
-    stds = randn( numstates ).^2
+    means = Vector{float}(randn( numstates ))
+    stds = Vector{float}(randn( numstates ).^2)
     return GaussianHMM( g, initialprobabilities, transitionprobabilities, means, stds )
 end
 
@@ -50,7 +50,7 @@ function Base.rand( hmm::GaussianHMM, n::Int )
     return observations
 end
 
-function setobservations( hmm::GaussianHMM, y::Vector{Float64} )
+function setobservations{T}( hmm::GaussianHMM{T}, y::Vector{T} )
     hmm.scratch = Dict{Symbol,Any}()
     hmm.scratch[:y] = y
 end
@@ -152,8 +152,8 @@ function emstep( hmm::GaussianHMM, nexthmm::GaussianHMM )
     delete!( nexthmm.scratch, :likelihood )
 end
 
-function em( hmm::GaussianHMM, epsilon::Float64; debug::Bool=false )
-    nexthmm = randomhmm( hmm.graph )
+function em{T}( hmm::GaussianHMM{T}, epsilon::Float64; debug::Bool=false )
+    nexthmm = randomhmm( hmm.graph, float=T )
     setobservations( nexthmm, observations( hmm ) )
     hmms = [hmm, nexthmm]
     newlikelihood = likelihood( hmm )
