@@ -7,6 +7,8 @@ type Digraph
     to::Array{Int}
 end
 
+Base.copy( g::Digraph ) = Digraph( copy( g.from ), copy( g.to ) )
+
 function addedge( g::Digraph, from::Int, to::Int )
     push!( g.from, from )
     push!( g.to, to )
@@ -25,6 +27,9 @@ end
 
 GaussianHMM{T <: Real}( g::Digraph, pi::Vector{T}, a::Matrix{T}, mu::Vector{T}, sigma::Vector{T} ) =
     GaussianHMM{T}( g, pi, a, mu, sigma, Dict{Symbol,Any}() )
+
+Base.copy( hmm::GaussianHMM ) =
+    GaussianHMM( copy( hmm.graph ), copy( hmm.initialprobabilities ), copy( hmm.transitionprobabilities ), copy( hmm.means ), copy( hmm.stds ), copy( hmm.scratch ) )
 
 function randomhmm( g::Digraph; float::DataType = Float64 )
     numstates = max( maximum( g.from ), maximum( g.to ) )
@@ -89,7 +94,7 @@ function backwardprobabilities( hmm::GaussianHMM )
     if !haskey( hmm.scratch, :beta )
         y = observations( hmm )
         N = length(hmm.initialprobabilities)
-        probabilities = [ones(length(hmm.initialprobabilities))]
+        probabilities = [ones(BigFloat,length(hmm.initialprobabilities))]
         b = pdfvalues( hmm )
         for i = length(y):-1:2
             joint = hmm.transitionprobabilities * (probabilities[end] .* b[i])
@@ -117,6 +122,7 @@ function conditionalstateprobabilities( hmm::GaussianHMM )
         proby = likelihood( hmm )
         hmm.scratch[:gamma] = [alpha[i][j] * beta[i][j]/proby for i in 1:T, j in 1:length(alpha[1])]
     end
+    return hmm.scratch[:gamma]
 end
 
 function conditionaljointstateprobabilities( hmm::GaussianHMM )
@@ -152,27 +158,33 @@ function emstep( hmm::GaussianHMM, nexthmm::GaussianHMM )
     delete!( nexthmm.scratch, :likelihood )
 end
 
-function em{T}( hmm::GaussianHMM{T}, epsilon::Float64; debug::Bool=false )
+function em{T}( hmm::GaussianHMM{T}; epsilon::Float64 = 0.0, debug::Int = 0, maxiterations::Float64 = Inf )
     nexthmm = randomhmm( hmm.graph, float=T )
     setobservations( nexthmm, observations( hmm ) )
     hmms = [hmm, nexthmm]
+    oldlikelihood = BigFloat(0.0)
     newlikelihood = likelihood( hmm )
     done = false
     i = 1
-    
+
+    iterations = 1
     while !done
-        if debug
+        if debug >= 2
             println( "Likelihood = $newlikelihood" )
         end
         emstep( hmms[i], hmms[3-i] )
         oldlikelihood = newlikelihood
-        done = !any(isnan(hmms[2-i].initialprobabilities)) && !any(isnan(hmms[2-i].transitionprobabilities)) &&
-            !any(isnan(hmms[2-i].means)) && !any(isnan(hmms[2-i].stds)) && !any(hmms[2-i].stds.<=0)
+        done = any(isnan(hmms[3-i].initialprobabilities)) || any(isnan(hmms[3-i].transitionprobabilities)) ||
+            any(isnan(hmms[3-i].means)) || any(isnan(hmms[3-i].stds)) || any(hmms[3-i].stds.<=0) || iterations >= maxiterations
         if !done
             newlikelihood = likelihood( hmms[3-i] )
-            done = newlikelihood > oldlikelihood + epsilon
+            done = newlikelihood / oldlikelihood - 1 <= epsilon
         end
         i = 3-i
+        iterations += 1
+    end
+    if debug >= 1
+        println( "Final ikelihood = $oldlikelihood; iterations = $iterations" )
     end
 
     hmm.initialprobabilities = hmms[3-i].initialprobabilities
