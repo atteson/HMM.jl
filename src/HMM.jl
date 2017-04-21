@@ -146,7 +146,7 @@ function emstep( hmm::GaussianHMM, nexthmm::GaussianHMM )
     xi = conditionaljointstateprobabilities( hmm )
     
     nexthmm.initialprobabilities = gamma[1,:]
-    nexthmm.transitionprobabilities = sum(xi)./occupation
+    nexthmm.transitionprobabilities = sum(xi)./occupation'
     nexthmm.means = sum([gamma[i,:]*y[i] for i in 1:T])./vec(occupation)
     nexthmm.stds = sqrt(sum([gamma[i,:].*(y[i] - hmm.means).^2 for i in 1:T])./vec(occupation))
     
@@ -184,7 +184,7 @@ function em{T}( hmm::GaussianHMM{T}; epsilon::Float64 = 0.0, debug::Int = 0, max
         iterations += 1
     end
     if debug >= 1
-        println( "Final ikelihood = $oldlikelihood; iterations = $iterations" )
+        println( "Final likelihood = $oldlikelihood; iterations = $iterations" )
     end
 
     hmm.initialprobabilities = hmms[3-i].initialprobabilities
