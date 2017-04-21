@@ -142,7 +142,7 @@ function emstep( hmm::GaussianHMM, nexthmm::GaussianHMM )
     y = observations( hmm )
     T = length(y)
     gamma = conditionalstateprobabilities( hmm )
-    occupation = sum(gamma,1)
+    occupation = sum(gamma[1:end-1,:],1)
     xi = conditionaljointstateprobabilities( hmm )
     
     nexthmm.initialprobabilities = gamma[1,:]
