@@ -159,6 +159,7 @@ function emstep( hmm::GaussianHMM, nexthmm::GaussianHMM )
 end
 
 function em{T}( hmm::GaussianHMM{T}; epsilon::Float64 = 0.0, debug::Int = 0, maxiterations::Float64 = Inf )
+    t0 = Base.time()
     nexthmm = randomhmm( hmm.graph, float=T )
     setobservations( nexthmm, observations( hmm ) )
     hmms = [hmm, nexthmm]
@@ -192,6 +193,13 @@ function em{T}( hmm::GaussianHMM{T}; epsilon::Float64 = 0.0, debug::Int = 0, max
     hmm.means = hmms[3-i].means
     hmm.stds = hmms[3-i].stds
     hmm.scratch = hmms[3-i].scratch
-end
     
+    hmm.scratch[:iterations] = iterations
+    hmm.scratch[:time] = Base.time() - t0
+end
+
+time( hmm::GaussianHMM ) = hmm.scratch[:time]
+
+iterations( hmm::GaussianHMM ) = hmm.scratch[:iterations]
+
 end # module
