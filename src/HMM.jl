@@ -23,10 +23,11 @@ type GaussianHMM{T}
     means::Vector{T}
     stds::Vector{T}
     scratch::Dict{Symbol,Any}
+    values::Function
 end
 
 GaussianHMM{T <: Real}( g::Digraph, pi::Vector{T}, a::Matrix{T}, mu::Vector{T}, sigma::Vector{T} ) =
-    GaussianHMM{T}( g, pi, a, mu, sigma, Dict{Symbol,Any}() )
+    GaussianHMM{T}( g, pi, a, mu, sigma, Dict{Symbol,Any}(), pdfvalues )
 
 Base.copy( hmm::GaussianHMM ) =
     GaussianHMM( copy( hmm.graph ), copy( hmm.initialprobabilities ), copy( hmm.transitionprobabilities ), copy( hmm.means ), copy( hmm.stds ), copy( hmm.scratch ) )
@@ -79,7 +80,7 @@ function forwardprobabilities( hmm::GaussianHMM )
     if !haskey( hmm.scratch, :alpha )
         y = observations( hmm )
         N = length(hmm.initialprobabilities)
-        b = pdfvalues( hmm )
+        b = hmm.values( hmm )
         probabilities = [hmm.initialprobabilities .* b[1]]
         for i = 2:length(y)
             joint = hmm.transitionprobabilities' * probabilities[end] .* b[i]
@@ -95,7 +96,7 @@ function backwardprobabilities( hmm::GaussianHMM )
         y = observations( hmm )
         N = length(hmm.initialprobabilities)
         probabilities = [ones(BigFloat,length(hmm.initialprobabilities))]
-        b = pdfvalues( hmm )
+        b = hmm.values( hmm )
         for i = length(y):-1:2
             joint = hmm.transitionprobabilities * (probabilities[end] .* b[i])
             push!( probabilities, joint )
@@ -132,7 +133,7 @@ function conditionaljointstateprobabilities( hmm::GaussianHMM )
         alpha = forwardprobabilities( hmm )
         beta = backwardprobabilities( hmm )
         proby = likelihood( hmm )
-        b = pdfvalues( hmm )
+        b = hmm.values( hmm )
         hmm.scratch[:xi] = [hmm.transitionprobabilities.*(alpha[i]*(beta[i+1].*b[i+1])')/proby for i in 1:T-1]
     end
     return hmm.scratch[:xi]
@@ -158,7 +159,8 @@ function emstep( hmm::GaussianHMM, nexthmm::GaussianHMM )
     delete!( nexthmm.scratch, :likelihood )
 end
 
-function em{T}( hmm::GaussianHMM{T}; epsilon::Float64 = 0.0, debug::Int = 0, maxiterations::Float64 = Inf )
+function em{T}( hmm::GaussianHMM{T}; epsilon::Float64 = 0.0, debug::Int = 0, maxiterations::Float64 = Inf, usecdf::Bool = false )
+    hmm.values = usecdf ? cdfvalues : pdfvalues
     t0 = Base.time()
     nexthmm = randomhmm( hmm.graph, float=T )
     setobservations( nexthmm, observations( hmm ) )
@@ -184,9 +186,6 @@ function em{T}( hmm::GaussianHMM{T}; epsilon::Float64 = 0.0, debug::Int = 0, max
         i = 3-i
         iterations += 1
     end
-    if debug >= 1
-        println( "Final likelihood = $oldlikelihood; iterations = $iterations" )
-    end
 
     hmm.initialprobabilities = hmms[3-i].initialprobabilities
     hmm.transitionprobabilities = hmms[3-i].transitionprobabilities
@@ -196,6 +195,10 @@ function em{T}( hmm::GaussianHMM{T}; epsilon::Float64 = 0.0, debug::Int = 0, max
     
     hmm.scratch[:iterations] = iterations
     hmm.scratch[:time] = Base.time() - t0
+    
+    if debug >= 1
+        println( "Final likelihood = $oldlikelihood; iterations = $iterations, time = $(hmm.scratch[:time])" )
+    end
 end
 
 time( hmm::GaussianHMM ) = hmm.scratch[:time]
