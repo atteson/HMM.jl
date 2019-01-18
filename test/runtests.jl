@@ -19,3 +19,12 @@ xi = HMM.conditionaljointstateprobabilities( hmm1 );
 hmm2 = copy( hmm1 );
 HMM.emstep( hmm1, hmm2 )
 @assert( maximum(abs.( sum(hmm2.transitionprobabilities,dims=2) .- 1 )) < 1e-8 )
+
+hmm3 = copy( hmm1 )
+y2 = rand( hmm1, 100000 );
+HMM.setobservations( hmm3, y2 )
+HMM.em( hmm3, debug=2 )
+
+@assert( maximum(abs.(hmm3.transitionprobabilities - hmm1.transitionprobabilities)) .< 1e-3 )
+@assert( maximum(abs.(hmm3.means - hmm1.means)) .< 1e-2 )
+@assert( maximum(abs.(hmm3.stds - hmm1.stds)) .< 1e-2 )

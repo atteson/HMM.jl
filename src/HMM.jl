@@ -219,8 +219,8 @@ function em( hmm::GaussianHMM{T};
         end
         emstep( hmms[i], hmms[3-i], usestationary=usestationary )
         oldlikelihood = newlikelihood
-        done = any(isnan(hmms[3-i].initialprobabilities)) || any(isnan(hmms[3-i].transitionprobabilities)) ||
-            any(isnan(hmms[3-i].means)) || any(isnan(hmms[3-i].stds)) || any(hmms[3-i].stds.<=0) ||
+        done = any(isnan.(hmms[3-i].initialprobabilities)) || any(isnan.(hmms[3-i].transitionprobabilities)) ||
+            any(isnan.(hmms[3-i].means)) || any(isnan.(hmms[3-i].stds)) || any(hmms[3-i].stds.<=0) ||
             iterations >= maxiterations
         if !done
             newlikelihood = likelihood( hmms[3-i] )
@@ -241,7 +241,7 @@ function em( hmm::GaussianHMM{T};
     
     if debug >= 1
         println( "Final likelihood = $oldlikelihood; iterations = $iterations, time = $(hmm.scratch[:time])" )
-        flush(STDOUT)
+        flush(stdout)
     end
 end
 
