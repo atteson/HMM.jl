@@ -65,8 +65,26 @@ type Interval{T<:Number}
     hi::T
 end
 
+function clearscratch( hmm::GaussianHMM )
+    delete!( hmm.scratch, :alpha )
+    delete!( hmm.scratch, :beta )
+    delete!( hmm.scratch, :gamma )
+    delete!( hmm.scratch, :xi )
+    delete!( hmm.scratch, :b )
+    delete!( hmm.scratch, :likelihood )
+end
+
+function write( io::IO, hmm::GaussianHMM )
+    write( io, hmm.graph )
+    write( io, hmm.initialprobabilities )
+    write( io, hmm.transitionprobabilities )
+    write( io, hmm.means )
+    write( io, hmm.stds )
+    write( io, hmm.scratch[:y] )
+end
+
 function setobservations{T}( hmm::GaussianHMM{T}, y::Union{Vector{T},Vector{Interval{T}}} )
-    hmm.scratch = Dict{Symbol,Any}()
+    clearscratch( hmm )
     hmm.scratch[:y] = y
 end
 
@@ -87,6 +105,15 @@ function probability( hmm::GaussianHMM )
         hmm.scratch[:b] = [[probability( Normal( hmm.means[i], hmm.stds[i] ), y[t] ) for i in 1:length(hmm.means)] for t in 1:length(y)]
     end
     return hmm.scratch[:b]
+end
+
+function stationary( hmm::GaussianHMM )
+    P = Matrix{Float64}( hmm.transitionprobabilities )
+    N = length(hmm.initialprobabilities)
+    I = eye(N)
+    P -= I
+    P[:,1] = ones(N)
+    return I[1,:]'*pinv(P)
 end
 
 function forwardprobabilities( hmm::GaussianHMM )
@@ -152,27 +179,27 @@ function conditionaljointstateprobabilities( hmm::GaussianHMM )
     return hmm.scratch[:xi]
 end
 
-function emstep( hmm::GaussianHMM, nexthmm::GaussianHMM )
+function emstep( hmm::GaussianHMM, nexthmm::GaussianHMM; usestationary::Bool = false )
     y = observations( hmm )
     T = length(y)
     gamma = conditionalstateprobabilities( hmm )
     occupation = sum(gamma[1:end-1,:],1)
     xi = conditionaljointstateprobabilities( hmm )
-    
-    nexthmm.initialprobabilities = gamma[1,:]
+
     nexthmm.transitionprobabilities = sum(xi)./occupation'
+    if usestationary
+        nexthmm.initialprobabilities = stationary( nexthmm )
+    else
+        nexthmm.initialprobabilities = gamma[1,:]
+    end
     nexthmm.means = sum([gamma[i,:]*y[i] for i in 1:T])./vec(occupation)
     nexthmm.stds = sqrt(sum([gamma[i,:].*(y[i] - hmm.means).^2 for i in 1:T])./vec(occupation))
-    
-    delete!( nexthmm.scratch, :alpha )
-    delete!( nexthmm.scratch, :beta )
-    delete!( nexthmm.scratch, :gamma )
-    delete!( nexthmm.scratch, :xi )
-    delete!( nexthmm.scratch, :b )
-    delete!( nexthmm.scratch, :likelihood )
+
+    clearscratch( nexthmm )
 end
 
-function em{T}( hmm::GaussianHMM{T}; epsilon::Float64 = 0.0, debug::Int = 0, maxiterations::Float64 = Inf, usecdf::Bool = false )
+function em{T}( hmm::GaussianHMM{T};
+                epsilon::Float64 = 0.0, debug::Int = 0, maxiterations::Float64 = Inf, usestationary::Bool = false )
     t0 = Base.time()
     nexthmm = randomhmm( hmm.graph, float=T )
     setobservations( nexthmm, observations( hmm ) )
@@ -187,10 +214,11 @@ function em{T}( hmm::GaussianHMM{T}; epsilon::Float64 = 0.0, debug::Int = 0, max
         if debug >= 2
             println( "Likelihood = $newlikelihood" )
         end
-        emstep( hmms[i], hmms[3-i] )
+        emstep( hmms[i], hmms[3-i], usestationary=usestationary )
         oldlikelihood = newlikelihood
         done = any(isnan(hmms[3-i].initialprobabilities)) || any(isnan(hmms[3-i].transitionprobabilities)) ||
-            any(isnan(hmms[3-i].means)) || any(isnan(hmms[3-i].stds)) || any(hmms[3-i].stds.<=0) || iterations >= maxiterations
+            any(isnan(hmms[3-i].means)) || any(isnan(hmms[3-i].stds)) || any(hmms[3-i].stds.<=0) ||
+            iterations >= maxiterations
         if !done
             newlikelihood = likelihood( hmms[3-i] )
             done = newlikelihood / oldlikelihood - 1 <= epsilon
@@ -210,6 +238,7 @@ function em{T}( hmm::GaussianHMM{T}; epsilon::Float64 = 0.0, debug::Int = 0, max
     
     if debug >= 1
         println( "Final likelihood = $oldlikelihood; iterations = $iterations, time = $(hmm.scratch[:time])" )
+        flush(STDOUT)
     end
 end
 
