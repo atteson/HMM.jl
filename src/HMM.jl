@@ -1,8 +1,9 @@
 module HMM
 
 using Distributions
+using Random
 
-type Digraph
+struct Digraph
     from::Array{Int}
     to::Array{Int}
 end
@@ -16,7 +17,7 @@ end
 
 fullyconnected( n::Int ) = Digraph( vcat( [collect(1:n) for i in 1:n]... ), vcat( [fill(i,n) for i in 1:n]... ) )
 
-type GaussianHMM{T}
+mutable struct GaussianHMM{T}
     graph::Digraph
     initialprobabilities::Vector{T}
     transitionprobabilities::Matrix{T}
@@ -25,21 +26,22 @@ type GaussianHMM{T}
     scratch::Dict{Symbol,Any}
 end
 
-GaussianHMM{T <: Real}( g::Digraph, pi::Vector{T}, a::Matrix{T}, mu::Vector{T}, sigma::Vector{T};
-                        scratch::Dict{Symbol,Any} = Dict{Symbol,Any}() ) =
-                            GaussianHMM{T}( g, pi, a, mu, sigma, scratch )
+GaussianHMM( g::Digraph, pi::Vector{T}, a::Matrix{T}, mu::Vector{T}, sigma::Vector{T};
+             scratch::Dict{Symbol,Any} = Dict{Symbol,Any}() )  where {T <: Real} =
+                 GaussianHMM{T}( g, pi, a, mu, sigma, scratch )
 
 Base.copy( hmm::GaussianHMM ) =
-    GaussianHMM( copy( hmm.graph ), copy( hmm.initialprobabilities ), copy( hmm.transitionprobabilities ), copy( hmm.means ), copy( hmm.stds ),
-                 copy( hmm.scratch ) )
+    GaussianHMM( copy( hmm.graph ), copy( hmm.initialprobabilities ), copy( hmm.transitionprobabilities ),
+                 copy( hmm.means ), copy( hmm.stds ), copy( hmm.scratch ) )
 
 function randomhmm( g::Digraph; float::DataType = Float64, seed::Int = 1 )
-    srand( seed )
+    Random.seed!( seed )
+    
     numstates = max( maximum( g.from ), maximum( g.to ) )
     initialprobabilities = Vector{float}(rand( numstates ))
     initialprobabilities ./= sum( initialprobabilities )
     transitionprobabilities = Matrix{float}(rand( numstates, numstates ))
-    transitionprobabilities ./= sum( transitionprobabilities, 2 )
+    transitionprobabilities ./= sum( transitionprobabilities, dims=2 )
     means = Vector{float}(randn( numstates ))
     stds = Vector{float}(randn( numstates ).^2)
     scratch = Dict{Symbol,Any}()
@@ -60,7 +62,7 @@ function Base.rand( hmm::GaussianHMM, n::Int )
     return observations
 end
 
-type Interval{T<:Number}
+struct Interval{T<:Number}
     lo::T
     hi::T
 end
@@ -83,7 +85,7 @@ function write( io::IO, hmm::GaussianHMM )
     write( io, hmm.scratch[:y] )
 end
 
-function setobservations{T}( hmm::GaussianHMM{T}, y::Union{Vector{T},Vector{Interval{T}}} )
+function setobservations( hmm::GaussianHMM{T}, y::Union{Vector{T},Vector{Interval{T}}} ) where {T}
     clearscratch( hmm )
     hmm.scratch[:y] = y
 end
@@ -95,7 +97,7 @@ function observations( hmm::GaussianHMM )
     return hmm.scratch[:y]
 end
 
-probability{N <: Number}( d::Distribution, x::N ) = pdf( d, x )
+probability( d::Distribution, x::N ) where {N <: Number} = pdf( d, x )
    
 probability( d::Distribution, i::Interval ) = cdf( d, i.hi ) - cdf( d, i.lo )
 
@@ -183,7 +185,7 @@ function emstep( hmm::GaussianHMM, nexthmm::GaussianHMM; usestationary::Bool = f
     y = observations( hmm )
     T = length(y)
     gamma = conditionalstateprobabilities( hmm )
-    occupation = sum(gamma[1:end-1,:],1)
+    occupation = sum(gamma[1:end-1,:],dims=1)
     xi = conditionaljointstateprobabilities( hmm )
 
     nexthmm.transitionprobabilities = sum(xi)./occupation'
@@ -193,13 +195,14 @@ function emstep( hmm::GaussianHMM, nexthmm::GaussianHMM; usestationary::Bool = f
         nexthmm.initialprobabilities = gamma[1,:]
     end
     nexthmm.means = sum([gamma[i,:]*y[i] for i in 1:T])./vec(occupation)
-    nexthmm.stds = sqrt(sum([gamma[i,:].*(y[i] - hmm.means).^2 for i in 1:T])./vec(occupation))
+    nexthmm.stds = sqrt.(sum([gamma[i,:].*(y[i] .- hmm.means).^2 for i in 1:T])./vec(occupation))
 
     clearscratch( nexthmm )
 end
 
-function em{T}( hmm::GaussianHMM{T};
-                epsilon::Float64 = 0.0, debug::Int = 0, maxiterations::Float64 = Inf, usestationary::Bool = false )
+function em( hmm::GaussianHMM{T};
+             epsilon::Float64 = 0.0, debug::Int = 0, maxiterations::Float64 = Inf,
+             usestationary::Bool = false ) where {T}
     t0 = Base.time()
     nexthmm = randomhmm( hmm.graph, float=T )
     setobservations( nexthmm, observations( hmm ) )
