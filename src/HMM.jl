@@ -85,7 +85,7 @@ function write( io::IO, hmm::GaussianHMM )
     write( io, hmm.scratch[:y] )
 end
 
-function setobservations( hmm::GaussianHMM{T}, y::Union{Vector{T},Vector{Interval{T}}} ) where {T}
+function setobservations( hmm::GaussianHMM{T}, y::Union{Vector{U},Vector{Interval{U}}} ) where {T, U <: Real}
     clearscratch( hmm )
     hmm.scratch[:y] = y
 end
@@ -133,11 +133,11 @@ function forwardprobabilities( hmm::GaussianHMM )
     return hmm.scratch[:alpha]
 end
 
-function backwardprobabilities( hmm::GaussianHMM )
+function backwardprobabilities( hmm::GaussianHMM{T} ) where {T}
     if !haskey( hmm.scratch, :beta )
         y = observations( hmm )
         N = length(hmm.initialprobabilities)
-        probabilities = [ones(BigFloat,length(hmm.initialprobabilities))]
+        probabilities = [ones(T,length(hmm.initialprobabilities))]
         b = probability( hmm )
         for i = length(y):-1:2
             joint = hmm.transitionprobabilities * (probabilities[end] .* b[i])
@@ -207,7 +207,7 @@ function em( hmm::GaussianHMM{T};
     nexthmm = randomhmm( hmm.graph, float=T )
     setobservations( nexthmm, observations( hmm ) )
     hmms = [hmm, nexthmm]
-    oldlikelihood = BigFloat(0.0)
+    oldlikelihood = zero(T)
     newlikelihood = likelihood( hmm )
     done = false
     i = 1
