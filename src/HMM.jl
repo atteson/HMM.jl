@@ -17,33 +17,33 @@ end
 
 fullyconnected( n::Int ) = Digraph( vcat( [collect(1:n) for i in 1:n]... ), vcat( [fill(i,n) for i in 1:n]... ) )
 
-mutable struct GaussianHMM{T}
+mutable struct GaussianHMM{Calc <: Real, Out <: Real}
     graph::Digraph
-    initialprobabilities::Vector{T}
-    transitionprobabilities::Matrix{T}
-    means::Vector{T}
-    stds::Vector{T}
+    initialprobabilities::Vector{Calc}
+    transitionprobabilities::Matrix{Calc}
+    means::Vector{Out}
+    stds::Vector{Out}
     scratch::Dict{Symbol,Any}
 end
 
-GaussianHMM( g::Digraph, pi::Vector{T}, a::Matrix{T}, mu::Vector{T}, sigma::Vector{T};
-             scratch::Dict{Symbol,Any} = Dict{Symbol,Any}() )  where {T <: Real} =
-                 GaussianHMM{T}( g, pi, a, mu, sigma, scratch )
+GaussianHMM( g::Digraph, pi::Vector{Calc}, a::Matrix{Calc}, mu::Vector{Out}, sigma::Vector{Out};
+             scratch::Dict{Symbol,Any} = Dict{Symbol,Any}() )  where {Calc, Out} =
+                 GaussianHMM{Calc, Out}( g, pi, a, mu, sigma, scratch )
 
 Base.copy( hmm::GaussianHMM ) =
     GaussianHMM( copy( hmm.graph ), copy( hmm.initialprobabilities ), copy( hmm.transitionprobabilities ),
                  copy( hmm.means ), copy( hmm.stds ), copy( hmm.scratch ) )
 
-function randomhmm( g::Digraph; float::DataType = Float64, seed::Int = 1 )
+function randomhmm( g::Digraph; calc::DataType = Float64, out::DataType = Float64, seed::Int = 1 )
     Random.seed!( seed )
     
     numstates = max( maximum( g.from ), maximum( g.to ) )
-    initialprobabilities = Vector{float}(rand( numstates ))
+    initialprobabilities = Vector{calc}(rand( numstates ))
     initialprobabilities ./= sum( initialprobabilities )
-    transitionprobabilities = Matrix{float}(rand( numstates, numstates ))
+    transitionprobabilities = Matrix{calc}(rand( numstates, numstates ))
     transitionprobabilities ./= sum( transitionprobabilities, dims=2 )
-    means = Vector{float}(randn( numstates ))
-    stds = Vector{float}(randn( numstates ).^2)
+    means = Vector{out}(randn( numstates ))
+    stds = Vector{out}(randn( numstates ).^2)
     scratch = Dict{Symbol,Any}()
     scratch[:seed] = seed
     return GaussianHMM( g, initialprobabilities, transitionprobabilities, means, stds, scratch=scratch )
@@ -85,7 +85,7 @@ function write( io::IO, hmm::GaussianHMM )
     write( io, hmm.scratch[:y] )
 end
 
-function setobservations( hmm::GaussianHMM{T}, y::Union{Vector{U},Vector{Interval{U}}} ) where {T, U <: Real}
+function setobservations( hmm::GaussianHMM, y::Union{Vector{U},Vector{Interval{U}}} ) where {U <: Real}
     clearscratch( hmm )
     hmm.scratch[:y] = y
 end
@@ -104,7 +104,8 @@ probability( d::Distribution, i::Interval ) = cdf( d, i.hi ) - cdf( d, i.lo )
 function probability( hmm::GaussianHMM )
     if !haskey( hmm.scratch, :b )
         y = observations( hmm )
-        hmm.scratch[:b] = [[probability( Normal( hmm.means[i], hmm.stds[i] ), y[t] ) for i in 1:length(hmm.means)] for t in 1:length(y)]
+        hmm.scratch[:b] =
+            [[probability( Normal( hmm.means[i], hmm.stds[i] ), y[t] ) for i in 1:length(hmm.means)] for t in 1:length(y)]
     end
     return hmm.scratch[:b]
 end
@@ -133,11 +134,11 @@ function forwardprobabilities( hmm::GaussianHMM )
     return hmm.scratch[:alpha]
 end
 
-function backwardprobabilities( hmm::GaussianHMM{T} ) where {T}
+function backwardprobabilities( hmm::GaussianHMM{Calc, Out} ) where {Calc, Out}
     if !haskey( hmm.scratch, :beta )
         y = observations( hmm )
         N = length(hmm.initialprobabilities)
-        probabilities = [ones(T,length(hmm.initialprobabilities))]
+        probabilities = [ones(Calc,length(hmm.initialprobabilities))]
         b = probability( hmm )
         for i = length(y):-1:2
             joint = hmm.transitionprobabilities * (probabilities[end] .* b[i])
@@ -200,14 +201,14 @@ function emstep( hmm::GaussianHMM, nexthmm::GaussianHMM; usestationary::Bool = f
     clearscratch( nexthmm )
 end
 
-function em( hmm::GaussianHMM{T};
+function em( hmm::GaussianHMM{Calc, Out};
              epsilon::Float64 = 0.0, debug::Int = 0, maxiterations::Float64 = Inf,
-             usestationary::Bool = false ) where {T}
+             usestationary::Bool = false ) where {Calc, Out}
     t0 = Base.time()
-    nexthmm = randomhmm( hmm.graph, float=T )
+    nexthmm = randomhmm( hmm.graph, calc=Calc )
     setobservations( nexthmm, observations( hmm ) )
     hmms = [hmm, nexthmm]
-    oldlikelihood = zero(T)
+    oldlikelihood = zero(Calc)
     newlikelihood = likelihood( hmm )
     done = false
     i = 1

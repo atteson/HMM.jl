@@ -4,7 +4,7 @@ using Brobdingnag
 # write your own tests here
 N = 2
 T = 1000
-hmm1 = HMM.randomhmm( HMM.fullyconnected( N ), float=BigFloat );
+hmm1 = HMM.randomhmm( HMM.fullyconnected( N ), calc=BigFloat );
 y1 = rand( hmm1, T );
 HMM.setobservations( hmm1, y1 );
 alpha = HMM.forwardprobabilities( hmm1 );
@@ -30,7 +30,7 @@ HMM.setobservations( hmm3, y2 )
 @assert( maximum(abs.(hmm3.means - hmm1.means)) .< 1e-2 )
 @assert( maximum(abs.(hmm3.stds - hmm1.stds)) .< 1e-2 )
 
-hmm4 = HMM.randomhmm( HMM.fullyconnected( N ), float=Brob )
+hmm4 = HMM.randomhmm( HMM.fullyconnected( N ), calc=Brob )
 y3 = rand( hmm1, 100000 );
-HMM.setobservations( hmm4, y3 )
+HMM.setobservations( hmm4, y3 );
 @time HMM.em( hmm4, debug=2 )
