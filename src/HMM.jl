@@ -41,17 +41,23 @@ mutable struct GaussianHMM{Calc <: Real, Out <: Real}
 
     alpha::DirtyMatrix{Calc}
     beta::DirtyMatrix{Calc}
+    gamma::DirtyMatrix{Calc}
     
     scratch::Dict{Symbol,Any}
 end
 
 GaussianHMM( g::Digraph, pi::Vector{Calc}, a::Matrix{Calc}, mu::Vector{Out}, sigma::Vector{Out};
                       scratch::Dict{Symbol,Any} = Dict{Symbol,Any}(), ) where {Calc, Out} =
-                          GaussianHMM{Calc, Out}( g, pi, a, mu, sigma, nothing, nothing, scratch )
+                          GaussianHMM{Calc, Out}( g, pi, a, mu, sigma, nothing, nothing, nothing, scratch )
 
 Base.copy( hmm::GaussianHMM ) =
-    GaussianHMM( copy( hmm.graph ), copy( hmm.initialprobabilities ), copy( hmm.transitionprobabilities ),
-                 copy( hmm.means ), copy( hmm.stds ), copy( hmm.alpha ), copy( hmm.beta ), copy( hmm.scratch ) )
+    GaussianHMM(
+        copy( hmm.graph ),
+        copy( hmm.initialprobabilities ), copy( hmm.transitionprobabilities ),
+        copy( hmm.means ), copy( hmm.stds ),
+        copy( hmm.alpha ), copy( hmm.beta ), copy( hmm.gamma ),
+        copy( hmm.scratch ),
+    )
 
 function randomhmm( g::Digraph; calc::DataType = Float64, out::DataType = Float64, seed::Int = 1 )
     Random.seed!( seed )
@@ -93,8 +99,10 @@ function clearscratch( hmm::GaussianHMM{Calc} ) where {Calc}
     if hmm.beta != nothing
         hmm.beta.dirty = true
     end
+    if hmm.gamma != nothing
+        hmm.gamma.dirty = true
+    end
 
-    delete!( hmm.scratch, :gamma )
     delete!( hmm.scratch, :xi )
     delete!( hmm.scratch, :b )
     delete!( hmm.scratch, :likelihood )
@@ -115,6 +123,7 @@ function setobservations( hmm::GaussianHMM{Calc}, y::Union{Vector{U},Vector{Inte
     
     hmm.alpha = DirtyArray( zeros( Calc, n, m ) )
     hmm.beta = DirtyArray( zeros( Calc, n, m ) )
+    hmm.gamma = DirtyArray( zeros( Calc, n, m ) )
     
     clearscratch( hmm )
     hmm.scratch[:y] = y
@@ -168,10 +177,10 @@ function backwardprobabilities( hmm::GaussianHMM{Calc, Out} ) where {Calc, Out}
     if hmm.beta.dirty
         y = observations( hmm )
         N = length(hmm.initialprobabilities)
-        hmm.beta.data[1,:] = ones(Calc,length(hmm.initialprobabilities))
+        hmm.beta.data[end,:] = ones(Calc,length(hmm.initialprobabilities))
         b = probability( hmm )
         for i = length(y):-1:2
-            hmm.beta.data[length(y)-i+2,:] = hmm.transitionprobabilities * (hmm.beta.data[length(y)-i+1,:] .* b[i])
+            hmm.beta.data[i-1,:] = hmm.transitionprobabilities * (hmm.beta.data[i,:] .* b[i])
         end
         hmm.beta.dirty = false
     end
@@ -187,15 +196,17 @@ function likelihood( hmm::GaussianHMM )
 end
 
 function conditionalstateprobabilities( hmm::GaussianHMM )
-    if !haskey( hmm.scratch, :gamma )
+    if hmm.gamma.dirty
         y = observations( hmm )
         T = length(y)
         alpha = forwardprobabilities( hmm )
         beta = backwardprobabilities( hmm )
         proby = likelihood( hmm )
-        hmm.scratch[:gamma] = [alpha[i,j] * beta[i,j]/proby for i in 1:T, j in 1:length(alpha[1,:])]
+        hmm.gamma.data[:,:] = [alpha[i,j] * beta[i,j]/proby for i in 1:T, j in 1:length(alpha[1,:])]
+
+        hmm.gamma.dirty = false
     end
-    return hmm.scratch[:gamma]
+    return hmm.gamma.data
 end
 
 function conditionaljointstateprobabilities( hmm::GaussianHMM )

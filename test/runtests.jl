@@ -10,7 +10,7 @@ HMM.setobservations( hmm1, y1 );
 alpha = HMM.forwardprobabilities( hmm1 );
 beta = HMM.backwardprobabilities( hmm1 );
 
-@assert(maximum(abs.(diff([sum(alpha[i,:].*beta[i]) for i in 1:T]))) < 1e-8)
+@assert(maximum(abs.(diff([sum(alpha[i,:].*beta[i,:]) for i in 1:T]))) < 1e-8)
 
 gamma = HMM.conditionalstateprobabilities( hmm1 );
 xi = HMM.conditionaljointstateprobabilities( hmm1 );
