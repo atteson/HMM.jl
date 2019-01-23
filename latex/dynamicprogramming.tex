@@ -1,0 +1,72 @@
+\documentclass{article}
+
+\usepackage{amsmath,amsfonts}
+
+\begin{document}
+
+Definitions:
+
+\begin{enumerate}
+  \item
+    $X_1, X_2, \ldots X_T$ are Markovian random variables with values in $\left\{s_1, s_2, \ldots, s_m\right\}$ and transition probabilities $p_{s_i,s_j}$ for $i,j\in\left\{1,\ldots,m\right\}$.
+  \item
+    $F_1, F_2, \ldots F_T$ are nonnegative random vectors such that the distribution of $F_t$ only depends on $X_t$, that is, $F_t$ is conditionally independent of $F_1, F_2, \ldots, F_{t-1}, F_{t+1}, \ldots, F_T$ and $X_1, X_2, \ldots, X_{t-1}, X_{t+1}, \ldots, X_T$ given $X_t$.
+    The probability distribution of $Y_t$ will be denoted by $P_{X_t}$, that is, if $X_t=s_i$ then the distribution will be $P_{s_i}$.
+    $F_t$ represents the random vector of multiplicative factors at $t$, that is, $F_t = 1 + R_t$ where $R_t$ is the random vector of (arithmetic) returns at time $t$.
+
+  \item
+    $u:[0,\infty)\rightarrow\mathbb{R}$ is the CRRA utility function:
+
+    \begin{eqnarray*}
+      u(x) = \left\{\begin{array}{ll}
+      \frac{x^\gamma - 1}{\gamma} & \gamma\ne 1\\
+      \ln(x) & \gamma = 1\\
+      \end{array}\right.
+    \end{eqnarray*}
+
+  \item
+    $w_t(p)$ is the vector of portfolio weights (percentage of wealth invested in each asset) for time $t$ as a function of the state probabilities.
+    $w_t(p)$ takes values in $\left\{r_1, r_2, \ldots, r_n\right\}$, that is, $w_t:S^m \rightarrow\left\{r_1,r_2,\ldots,r_m\right\}$ where $S^m$ is the unit $m-1$-simplex, that is, the set of $m$-vectors $p$ such that $\sum_i p_i = 1$.
+    In addition, each $r_i$ sums to $1$, that is, for any $i$, $\sum_j r_{i,j} = 1$.
+
+  \item
+    \begin{eqnarray*}
+      U_s\left(w\right) = \int u\left(w'f\right)dP_s
+    \end{eqnarray*}
+
+    \item
+      The gains process is defined as:
+
+      \begin{eqnarray*}
+        G_t = \prod_{u=t}^T w_{u-1}' F_u
+      \end{eqnarray*}
+
+      \item
+        The optimal value at time $t$ start with state distribution $p$ is defined as:
+
+        \begin{eqnarray*}
+          J_t(p) = \max \sum_s p_s E\left[\left.G_t\right|X_t=s\right]
+        \end{eqnarray*}
+
+\end{enumerate}
+
+The weights at the terminal time can be calculated as:
+
+\begin{eqnarray*}
+  w_{T-1}\left(p\right) & = & \mbox{argmax}_{w\in\left\{r_1,\ldots,r_n\right\}} J_t(p)\\
+  & = & \mbox{argmax}_{w\in\left\{r_1,\ldots,r_n\right\}} \sum_s p_s E\left[\left.u\!\left(w'F_T\right)\right|X_T=s\right]\\
+  & = & \mbox{argmax}_{w\in\left\{r_1,\ldots,r_n\right\}} \sum_s p_s \int u\!\left(w'f\right) dP_s(f)\\
+  & = & \mbox{argmax}_{w\in\left\{r_1,\ldots,r_n\right\}}\sum_s p_s U_s\left(w\right)
+\end{eqnarray*}
+%
+which is often solvable since it is a finite maximization.\\
+
+The weights at some earlier time can be calculated as:
+
+\begin{eqnarray*}
+  w_t\left(p\right) & = & \mbox{argmax}_{w_t} \max_{w_{t+1}, \ldots, w_{T-1}} \sum_s p_s E\left[\left.u\left(G_{t+1}\right)\right|X_{t+1}=s\right]\\
+  & = & \mbox{argmax}_{w_t} \max_{w_{t+1}, \ldots, w_{T-1}} \sum_s p_s E\left[\left.u\left(w_t'F_{t+1} G_{t+2}\right)\right|X_{t+1}=s\right]\\
+  & = & \mbox{argmax}_{w_t} \max_{w_{t+1}, \ldots, w_{T-1}} \sum_s p_s E\left[\left.u\left(w_t'F_{t+1}\right)\right|X_{t+1}=s\right]E\left[\left.u\left(G_{t+2}\right)\right|X_{t+1}=s\right]\\
+\end{eqnarray*}
+
+\end{document}

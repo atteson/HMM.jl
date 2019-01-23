@@ -2,6 +2,8 @@ module HMM
 
 using Distributions
 using Random
+using Combinatorics
+using LinearAlgebra
 
 struct Digraph
     from::Array{Int}
@@ -202,7 +204,9 @@ function emstep( hmm::GaussianHMM, nexthmm::GaussianHMM; usestationary::Bool = f
 end
 
 function em( hmm::GaussianHMM{Calc, Out};
-             epsilon::Float64 = 0.0, debug::Int = 0, maxiterations::Float64 = Inf,
+             epsilon::Float64 = 0.0,
+             debug::Int = 0,
+             maxiterations::Float64 = Inf,
              usestationary::Bool = false ) where {Calc, Out}
     t0 = Base.time()
     nexthmm = randomhmm( hmm.graph, calc=Calc )
@@ -249,5 +253,25 @@ end
 time( hmm::GaussianHMM ) = hmm.scratch[:time]
 
 iterations( hmm::GaussianHMM ) = hmm.scratch[:iterations]
+
+function permutederror( hmm1::GaussianHMM, hmm2::GaussianHMM )
+    # use transition matrix to find best permutation; apply to means and stds
+    n = length(hmm1.initialprobabilities)
+    @assert( n == length(hmm2.initialprobabilities) )
+    minerror = Inf
+    minperm = nothing
+    tp1 = convert( Matrix{Float64}, hmm1.transitionprobabilities )
+    tp2 = convert( Matrix{Float64}, hmm2.transitionprobabilities )
+    for perm in permutations(1:n)
+        error = norm( tp1[perm, perm] - tp2, Inf )
+        if error < minerror
+            minerror = error
+            minperm = perm
+        end
+    end
+    meanerror = norm( hmm1.means[minperm] - hmm2.means, Inf )
+    stderror = norm( hmm1.stds[minperm] - hmm2.stds, Inf )
+    return (transitionprobabilities=minerror, means=meanerror, stds=stderror)
+end
 
 end # module

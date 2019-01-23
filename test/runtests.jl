@@ -21,16 +21,22 @@ hmm2 = copy( hmm1 );
 HMM.emstep( hmm1, hmm2 )
 @assert( maximum(abs.( sum(hmm2.transitionprobabilities,dims=2) .- 1 )) < 1e-8 )
 
-hmm3 = copy( hmm1 )
+hmm3 = HMM.randomhmm( hmm1.graph, calc=BigFloat, seed=2 )
 y2 = rand( hmm1, 100000 );
 HMM.setobservations( hmm3, y2 )
 @time HMM.em( hmm3, debug=2 )
 
-@assert( maximum(abs.(hmm3.transitionprobabilities - hmm1.transitionprobabilities)) .< 1e-2 )
-@assert( maximum(abs.(hmm3.means - hmm1.means)) .< 1e-2 )
-@assert( maximum(abs.(hmm3.stds - hmm1.stds)) .< 1e-2 )
+error = HMM.permutederror( hmm1, hmm3 )
+@assert( error.transitionprobabilities < 1e-2 )
+@assert( error.means < 1e-2 )
+@assert( error.stds < 1e-2 )
 
-hmm4 = HMM.randomhmm( HMM.fullyconnected( N ), calc=Brob )
+hmm4 = HMM.randomhmm( hmm1.graph, calc=Brob, seed=2 )
 y3 = rand( hmm1, 100000 );
 HMM.setobservations( hmm4, y3 );
 @time HMM.em( hmm4, debug=2 )
+
+error = HMM.permutederror( hmm1, hmm4 )
+@assert( error.transitionprobabilities < 1e-2 )
+@assert( error.means < 1e-2 )
+@assert( error.stds < 1e-2 )
