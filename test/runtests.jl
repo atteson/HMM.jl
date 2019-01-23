@@ -10,7 +10,7 @@ HMM.setobservations( hmm1, y1 );
 alpha = HMM.forwardprobabilities( hmm1 );
 beta = HMM.backwardprobabilities( hmm1 );
 
-@assert(maximum(abs.(diff([sum(alpha[i].*beta[i]) for i in 1:T]))) < 1e-8)
+@assert(maximum(abs.(diff([sum(alpha[i,:].*beta[i]) for i in 1:T]))) < 1e-8)
 
 gamma = HMM.conditionalstateprobabilities( hmm1 );
 xi = HMM.conditionaljointstateprobabilities( hmm1 );
@@ -32,8 +32,7 @@ error = HMM.permutederror( hmm1, hmm3 )
 @assert( error.stds < 1e-2 )
 
 hmm4 = HMM.randomhmm( hmm1.graph, calc=Brob, seed=2 )
-y3 = rand( hmm1, 100000 );
-HMM.setobservations( hmm4, y3 );
+HMM.setobservations( hmm4, y2 );
 @time HMM.em( hmm4, debug=2 )
 
 error = HMM.permutederror( hmm1, hmm4 )
