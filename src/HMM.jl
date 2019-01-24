@@ -32,6 +32,11 @@ Base.copy( da::DirtyArray ) = DirtyArray( copy( da.data ), da.dirty )
 const DirtyVector{T} = Union{DirtyArray{T,1},Nothing} where {T}
 const DirtyMatrix{T} = Union{DirtyArray{T,2},Nothing} where {T}
 
+struct Interval{T<:Number}
+    lo::T
+    hi::T
+end
+
 mutable struct GaussianHMM{Calc <: Real, Out <: Real}
     graph::Digraph
     initialprobabilities::Vector{Calc}
@@ -44,6 +49,8 @@ mutable struct GaussianHMM{Calc <: Real, Out <: Real}
     gamma::DirtyMatrix{Calc}
     xi::Union{DirtyArray{Calc,3},Nothing}
     b::DirtyMatrix{Calc}
+    likelihood::Calc
+    y::Union{Vector{Out},Vector{Interval{Out}},Nothing}
     
     scratch::Dict{Symbol,Any}
 end
@@ -51,14 +58,15 @@ end
 GaussianHMM( g::Digraph, pi::Vector{Calc}, a::Matrix{Calc}, mu::Vector{Out}, sigma::Vector{Out};
                       scratch::Dict{Symbol,Any} = Dict{Symbol,Any}(), ) where {Calc, Out} =
                           GaussianHMM{Calc, Out}( g, pi, a, mu, sigma,
-                                                  nothing, nothing, nothing, nothing, nothing, scratch )
+                                                  nothing, nothing, nothing, nothing, nothing, convert( Calc, NaN ), nothing,
+                                                  scratch )
 
 Base.copy( hmm::GaussianHMM ) =
     GaussianHMM(
         copy( hmm.graph ),
         copy( hmm.initialprobabilities ), copy( hmm.transitionprobabilities ),
         copy( hmm.means ), copy( hmm.stds ),
-        copy( hmm.alpha ), copy( hmm.beta ), copy( hmm.gamma ), copy( hmm.xi ), copy( hmm.b ),
+        copy( hmm.alpha ), copy( hmm.beta ), copy( hmm.gamma ), copy( hmm.xi ), copy( hmm.b ), hmm.likelihood, copy( hmm.y ),
         copy( hmm.scratch ),
     )
 
@@ -90,11 +98,6 @@ function Base.rand( hmm::GaussianHMM, n::Int )
     return observations
 end
 
-struct Interval{T<:Number}
-    lo::T
-    hi::T
-end
-
 function clearscratch( hmm::GaussianHMM{Calc} ) where {Calc}
     if hmm.alpha != nothing
         hmm.alpha.dirty = true
@@ -111,8 +114,7 @@ function clearscratch( hmm::GaussianHMM{Calc} ) where {Calc}
     if hmm.b != nothing
         hmm.b.dirty = true
     end
-
-    delete!( hmm.scratch, :likelihood )
+    hmm.likelihood = convert( Calc, NaN )
 end
 
 function write( io::IO, hmm::GaussianHMM )
@@ -121,7 +123,7 @@ function write( io::IO, hmm::GaussianHMM )
     write( io, hmm.transitionprobabilities )
     write( io, hmm.means )
     write( io, hmm.stds )
-    write( io, hmm.scratch[:y] )
+    write( io, hmm.y )
 end
 
 function setobservations( hmm::GaussianHMM{Calc}, y::Union{Vector{U},Vector{Interval{U}}} ) where {Calc, U <: Real}
@@ -135,14 +137,14 @@ function setobservations( hmm::GaussianHMM{Calc}, y::Union{Vector{U},Vector{Inte
     hmm.b = DirtyArray( zeros( Calc, T, m ) )
     
     clearscratch( hmm )
-    hmm.scratch[:y] = y
+    hmm.y = y
 end
 
 function observations( hmm::GaussianHMM )
-    if !haskey( hmm.scratch, :y )
+    if hmm.y == nothing
         error( "Need to set observations in order to perform calculation" )
     end
-    return hmm.scratch[:y]
+    return hmm.y
 end
 
 probability( d::Distribution, x::N ) where {N <: Number} = pdf( d, x )
@@ -199,12 +201,12 @@ function backwardprobabilities( hmm::GaussianHMM{Calc, Out} ) where {Calc, Out}
     return hmm.beta.data
 end
 
-function likelihood( hmm::GaussianHMM )
-    if !haskey( hmm.scratch, :likelihood )
+function likelihood( hmm::GaussianHMM{Calc} ) where {Calc}
+    if isnan(hmm.likelihood)
         alpha = forwardprobabilities( hmm )        
-        hmm.scratch[:likelihood] = sum(alpha[end,:])
+        hmm.likelihood = sum(alpha[end,:])
     end
-    return hmm.scratch[:likelihood]
+    return hmm.likelihood
 end
 
 function conditionalstateprobabilities( hmm::GaussianHMM )

@@ -1,5 +1,6 @@
 using HMM
 using Brobdingnag
+using GCTools
 
 # write your own tests here
 N = 2
@@ -23,7 +24,7 @@ HMM.emstep( hmm1, hmm2 )
 
 hmm3 = HMM.randomhmm( hmm1.graph, calc=BigFloat, seed=2 )
 y2 = rand( hmm1, 100000 );
-HMM.setobservations( hmm3, y2 )
+HMM.setobservations( hmm3, y2 );
 @time HMM.em( hmm3, debug=2 )
 
 error = HMM.permutederror( hmm1, hmm3 )
@@ -33,7 +34,9 @@ error = HMM.permutederror( hmm1, hmm3 )
 
 hmm4 = HMM.randomhmm( hmm1.graph, calc=Brob, seed=2 )
 HMM.setobservations( hmm4, y2 );
+GCTools.reset()
 @time HMM.em( hmm4, debug=2 )
+GCTools.print()
 
 error = HMM.permutederror( hmm1, hmm4 )
 @assert( error.transitionprobabilities < 1e-2 )
