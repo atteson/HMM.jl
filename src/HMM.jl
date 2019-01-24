@@ -270,8 +270,7 @@ function em( hmm::GaussianHMM{Calc, Out};
              maxiterations::Float64 = Inf,
              usestationary::Bool = false ) where {Calc, Out}
     t0 = Base.time()
-    nexthmm = randomhmm( hmm.graph, calc=Calc )
-    setobservations( nexthmm, observations( hmm ) )
+    nexthmm = copy( hmm )
     hmms = [hmm, nexthmm]
     oldlikelihood = zero(Calc)
     newlikelihood = likelihood( hmm )
