@@ -230,7 +230,7 @@ function conditionaljointstateprobabilities( hmm::GaussianHMM )
         proby = likelihood( hmm )
         b = probability( hmm )
         for i = 1:T-1
-            hmm.xi.data[i,:,:] = hmm.transitionprobabilities.*(alpha[i,:]*(beta[i+1,:].*b[i+1])')/proby
+            hmm.xi.data[i,:,:] = hmm.transitionprobabilities.*(alpha[i,:]*(beta[i+1,:].*b[i+1,:])')/proby
         end
 
         hmm.xi.dirty = false
