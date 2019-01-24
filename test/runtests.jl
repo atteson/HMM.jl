@@ -14,8 +14,8 @@ beta = HMM.backwardprobabilities( hmm1 );
 
 gamma = HMM.conditionalstateprobabilities( hmm1 );
 xi = HMM.conditionaljointstateprobabilities( hmm1 );
-@assert( maximum(abs.([maximum(abs.(sum(xi[i],dims=2) - gamma[i,:])) for i in 1:T-1])) < 1e-8 )
-@assert( maximum(abs.([maximum(abs.(sum(xi[i],dims=1)' - gamma[i+1,:])) for i in 1:T-1])) < 1e-8 )
+@assert( maximum(abs.([maximum(abs.(sum(xi[i,:,:],dims=2) - gamma[i,:])) for i in 1:T-1])) < 1e-8 )
+@assert( maximum(abs.([maximum(abs.(sum(xi[i,:,:],dims=1)' - gamma[i+1,:])) for i in 1:T-1])) < 1e-8 )
 
 hmm2 = copy( hmm1 );
 HMM.emstep( hmm1, hmm2 )
