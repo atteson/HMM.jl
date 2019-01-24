@@ -43,20 +43,22 @@ mutable struct GaussianHMM{Calc <: Real, Out <: Real}
     beta::DirtyMatrix{Calc}
     gamma::DirtyMatrix{Calc}
     xi::Union{DirtyArray{Calc,3},Nothing}
+    b::DirtyMatrix{Calc}
     
     scratch::Dict{Symbol,Any}
 end
 
 GaussianHMM( g::Digraph, pi::Vector{Calc}, a::Matrix{Calc}, mu::Vector{Out}, sigma::Vector{Out};
                       scratch::Dict{Symbol,Any} = Dict{Symbol,Any}(), ) where {Calc, Out} =
-                          GaussianHMM{Calc, Out}( g, pi, a, mu, sigma, nothing, nothing, nothing, nothing, scratch )
+                          GaussianHMM{Calc, Out}( g, pi, a, mu, sigma,
+                                                  nothing, nothing, nothing, nothing, nothing, scratch )
 
 Base.copy( hmm::GaussianHMM ) =
     GaussianHMM(
         copy( hmm.graph ),
         copy( hmm.initialprobabilities ), copy( hmm.transitionprobabilities ),
         copy( hmm.means ), copy( hmm.stds ),
-        copy( hmm.alpha ), copy( hmm.beta ), copy( hmm.gamma ), copy( hmm.xi ),
+        copy( hmm.alpha ), copy( hmm.beta ), copy( hmm.gamma ), copy( hmm.xi ), copy( hmm.b ),
         copy( hmm.scratch ),
     )
 
@@ -106,8 +108,10 @@ function clearscratch( hmm::GaussianHMM{Calc} ) where {Calc}
     if hmm.xi != nothing
         hmm.xi.dirty = true
     end
+    if hmm.b != nothing
+        hmm.b.dirty = true
+    end
 
-    delete!( hmm.scratch, :b )
     delete!( hmm.scratch, :likelihood )
 end
 
@@ -128,6 +132,7 @@ function setobservations( hmm::GaussianHMM{Calc}, y::Union{Vector{U},Vector{Inte
     hmm.beta = DirtyArray( zeros( Calc, T, m ) )
     hmm.gamma = DirtyArray( zeros( Calc, T, m ) )
     hmm.xi = DirtyArray( zeros( Calc, T-1, m, m ) )
+    hmm.b = DirtyArray( zeros( Calc, T, m ) )
     
     clearscratch( hmm )
     hmm.scratch[:y] = y
@@ -145,12 +150,15 @@ probability( d::Distribution, x::N ) where {N <: Number} = pdf( d, x )
 probability( d::Distribution, i::Interval ) = cdf( d, i.hi ) - cdf( d, i.lo )
 
 function probability( hmm::GaussianHMM )
-    if !haskey( hmm.scratch, :b )
+    if hmm.b.dirty
         y = observations( hmm )
-        hmm.scratch[:b] =
-            [[probability( Normal( hmm.means[i], hmm.stds[i] ), y[t] ) for i in 1:length(hmm.means)] for t in 1:length(y)]
+        for t in 1:length(y)
+            hmm.b.data[t,:] = [probability( Normal( hmm.means[i], hmm.stds[i] ), y[t] ) for i in 1:length(hmm.means)]
+        end
+
+        hmm.b.dirty = false
     end
-    return hmm.scratch[:b]
+    return hmm.b.data
 end
 
 function stationary( hmm::GaussianHMM )
@@ -168,9 +176,9 @@ function forwardprobabilities( hmm::GaussianHMM )
         N = length(hmm.initialprobabilities)
         b = probability( hmm )
                                    
-        hmm.alpha.data[1,:] = hmm.initialprobabilities .* b[1]
+        hmm.alpha.data[1,:] = hmm.initialprobabilities .* b[1,:]
         for i = 2:length(y)
-            hmm.alpha.data[i,:] = hmm.transitionprobabilities' * hmm.alpha.data[i-1,:] .* b[i]
+            hmm.alpha.data[i,:] = hmm.transitionprobabilities' * hmm.alpha.data[i-1,:] .* b[i,:]
         end
         hmm.alpha.dirty = false
     end
@@ -184,7 +192,7 @@ function backwardprobabilities( hmm::GaussianHMM{Calc, Out} ) where {Calc, Out}
         hmm.beta.data[end,:] = ones(Calc,length(hmm.initialprobabilities))
         b = probability( hmm )
         for i = length(y):-1:2
-            hmm.beta.data[i-1,:] = hmm.transitionprobabilities * (hmm.beta.data[i,:] .* b[i])
+            hmm.beta.data[i-1,:] = hmm.transitionprobabilities * (hmm.beta.data[i,:] .* b[i,:])
         end
         hmm.beta.dirty = false
     end
