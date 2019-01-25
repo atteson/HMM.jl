@@ -251,7 +251,8 @@ function emstep( hmm::GaussianHMM, nexthmm::GaussianHMM; usestationary::Bool = f
     xi = conditionaljointstateprobabilities( hmm )
     GCTools.checkpoint(:emstep)
 
-    nexthmm.transitionprobabilities = reshape(sum(xi, dims=1), (2,2))./occupation'
+    m = length(hmm.initialprobabilities)
+    nexthmm.transitionprobabilities = reshape(sum(xi, dims=1), (m,m))./occupation'
     if usestationary
         nexthmm.initialprobabilities = stationary( nexthmm )
     else
@@ -267,8 +268,8 @@ end
 function em( hmm::GaussianHMM{Calc, Out};
              epsilon::Float64 = 0.0,
              debug::Int = 0,
-             maxiterations::Float64 = Inf,
-             usestationary::Bool = false ) where {Calc, Out}
+             maxiterations::Iter = Inf,
+             usestationary::Bool = false ) where {Calc, Out, Iter <: Number}
     t0 = Base.time()
     nexthmm = copy( hmm )
     hmms = [hmm, nexthmm]

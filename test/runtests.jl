@@ -42,3 +42,10 @@ error = HMM.permutederror( hmm1, hmm4 )
 @assert( error.transitionprobabilities < 1e-2 )
 @assert( error.means < 1e-2 )
 @assert( error.stds < 1e-2 )
+
+hmm5 = HMM.randomhmm( HMM.fullyconnected(3), calc=Brob, seed=1 )
+y3 = rand( hmm5, 100000 )
+hmm6 = HMM.randomhmm( HMM.fullyconnected(3), calc=Brob, seed=2 )
+HMM.setobservations( hmm6, y3 )
+@time HMM.em( hmm6, debug=2, maxiterations=100 )
+
