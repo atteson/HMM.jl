@@ -158,9 +158,11 @@ function Base.read( io::IO, ::Type{GaussianHMM{Calc,Out}} ) where {Calc,Out}
     means = readarray( io, Vector{Out} )
     stds = readarray( io, Vector{Out} )
     y = readarray( io, Vector{Out} )
-    return GaussianHMM( graph, initialprobabilities, transitionprobabilities,
-                        means, stds,
-                        nothing, nothing, nothing, nothing, nothing, convert( Calc, NaN ), nothing, Dict{Symbol,Any}() )
+    hmm = GaussianHMM( graph, initialprobabilities, transitionprobabilities,
+                       means, stds,
+                       nothing, nothing, nothing, nothing, nothing, convert( Calc, NaN ), nothing, Dict{Symbol,Any}() )
+    setobservations( hmm, y )
+    return hmm
 end
 
 function setobservations( hmm::GaussianHMM{Calc}, y::Union{Vector{U},Vector{Interval{U}}} ) where {Calc, U <: Real}
@@ -205,7 +207,7 @@ end
 function stationary( hmm::GaussianHMM )
     P = Matrix{Float64}( hmm.transitionprobabilities )
     N = length(hmm.initialprobabilities)
-    I = eye(N)
+    I = one(P)
     P -= I
     P[:,1] = ones(N)
     return I[1,:]'*pinv(P)

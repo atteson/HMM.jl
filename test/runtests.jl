@@ -25,6 +25,9 @@ beta = HMM.backwardprobabilities( hmm1 );
 
 @assert(maximum(abs.(diff([sum(alpha[i,:].*beta[i,:]) for i in 1:T]))) < 1e-8)
 
+pi1 = HMM.stationary( hmm1 )
+@assert( maximum(abs.(pi1 * hmm1.transitionprobabilities - pi1)) < 1e-8 )
+
 gamma = HMM.conditionalstateprobabilities( hmm1 );
 xi = HMM.conditionaljointstateprobabilities( hmm1 );
 @assert( maximum(abs.([maximum(abs.(sum(xi[i,:,:],dims=2) - gamma[i,:])) for i in 1:T-1])) < 1e-8 )
