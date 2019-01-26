@@ -1,8 +1,19 @@
 using HMM
 using Brobdingnag
 using GCTools
+using Random
 
-# write your own tests here
+Random.seed!(1)
+x = rand( 10, 5 )
+name = tempname()
+file = open( name, "w" )
+HMM.writearray( file, x )
+close(file)
+file = open( name, "r" )
+y = HMM.readarray( file, Matrix{Float64} )
+close(file)
+@assert( x == y )
+
 N = 2
 T = 1000
 hmm1 = HMM.randomhmm( HMM.fullyconnected( N ), calc=BigFloat );
@@ -32,8 +43,9 @@ error = HMM.permutederror( hmm1, hmm3 )
 @assert( error.means < 1e-2 )
 @assert( error.stds < 1e-2 )
 
+y3 = rand( hmm1, 100000 );
 hmm4 = HMM.randomhmm( hmm1.graph, calc=Brob, seed=2 )
-HMM.setobservations( hmm4, y2 );
+HMM.setobservations( hmm4, y3 );
 GCTools.reset()
 @time HMM.em( hmm4, debug=2 )
 GCTools.print()

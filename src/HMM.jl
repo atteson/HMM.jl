@@ -5,6 +5,7 @@ using Random
 using Combinatorics
 using LinearAlgebra
 using GCTools
+using Printf
 
 struct Digraph
     from::Array{Int}
@@ -117,13 +118,34 @@ function clearscratch( hmm::GaussianHMM{Calc} ) where {Calc}
     hmm.likelihood = convert( Calc, NaN )
 end
 
-function write( io::IO, hmm::GaussianHMM )
+function writearray( io::IO, v::Array{T,N} ) where {T,N}
+    for i in size(v)
+        Base.write( io, i )
+    end
+    for x in v
+        Base.write( io, x )
+    end
+end
+
+function readarray( io::IO, ::Type{Array{T,N}} ) where {T,N}
+    size = Int[]
+    for i in 1:N
+        push!( size, Base.read( io, Int ) )
+    end
+    v = zeros( T, size... )
+    for i = 1:prod(size)
+        v[i] = read( io, T )
+    end
+    return v
+end
+
+function Base.write( io::IO, hmm::GaussianHMM )
     write( io, hmm.graph )
-    write( io, hmm.initialprobabilities )
-    write( io, hmm.transitionprobabilities )
-    write( io, hmm.means )
-    write( io, hmm.stds )
-    write( io, hmm.y )
+    writearray( io, hmm.initialprobabilities )
+    writearray( io, hmm.transitionprobabilities )
+    writearray( io, hmm.means )
+    writearray( io, hmm.stds )
+    writearray( io, hmm.y )
 end
 
 function setobservations( hmm::GaussianHMM{Calc}, y::Union{Vector{U},Vector{Interval{U}}} ) where {Calc, U <: Real}
@@ -152,14 +174,16 @@ probability( d::Distribution, x::N ) where {N <: Number} = pdf( d, x )
 probability( d::Distribution, i::Interval ) = cdf( d, i.hi ) - cdf( d, i.lo )
 
 function probability( hmm::GaussianHMM )
+    GCTools.push!(:probability)
     if hmm.b.dirty
         y = observations( hmm )
-        for t in 1:length(y)
-            hmm.b.data[t,:] = [probability( Normal( hmm.means[i], hmm.stds[i] ), y[t] ) for i in 1:length(hmm.means)]
+        for i in 1:length(hmm.initialprobabilities)
+            hmm.b.data[:,i] = pdf.( Normal( hmm.means[i], hmm.stds[i] ), y )
         end
 
         hmm.b.dirty = false
     end
+    GCTools.pop!()
     return hmm.b.data
 end
 
@@ -173,6 +197,7 @@ function stationary( hmm::GaussianHMM )
 end
 
 function forwardprobabilities( hmm::GaussianHMM )
+    GCTools.push!(:forwardprobabilities)
     if hmm.alpha.dirty
         y = observations( hmm )
         N = length(hmm.initialprobabilities)
@@ -184,10 +209,12 @@ function forwardprobabilities( hmm::GaussianHMM )
         end
         hmm.alpha.dirty = false
     end
+    GCTools.pop!()
     return hmm.alpha.data
 end
 
 function backwardprobabilities( hmm::GaussianHMM{Calc, Out} ) where {Calc, Out}
+    GCTools.push!(:backwardprobabilities)
     if hmm.beta.dirty
         y = observations( hmm )
         N = length(hmm.initialprobabilities)
@@ -198,32 +225,38 @@ function backwardprobabilities( hmm::GaussianHMM{Calc, Out} ) where {Calc, Out}
         end
         hmm.beta.dirty = false
     end
+    GCTools.pop!()
     return hmm.beta.data
 end
 
 function likelihood( hmm::GaussianHMM{Calc} ) where {Calc}
+    GCTools.push!(:likelihood)
     if isnan(hmm.likelihood)
         alpha = forwardprobabilities( hmm )        
         hmm.likelihood = sum(alpha[end,:])
     end
+    GCTools.pop!()
     return hmm.likelihood
 end
 
 function conditionalstateprobabilities( hmm::GaussianHMM )
+    GCTools.push!(:conditionalstateprobabilities)
     if hmm.gamma.dirty
         y = observations( hmm )
         T = length(y)
         alpha = forwardprobabilities( hmm )
         beta = backwardprobabilities( hmm )
         proby = likelihood( hmm )
-        hmm.gamma.data[:,:] = [alpha[i,j] * beta[i,j]/proby for i in 1:T, j in 1:length(alpha[1,:])]
+        hmm.gamma.data[:,:] = alpha .* beta/proby
 
         hmm.gamma.dirty = false
     end
+    GCTools.pop!()
     return hmm.gamma.data
 end
 
 function conditionaljointstateprobabilities( hmm::GaussianHMM )
+    GCTools.push!(:conditionaljointstateprobabilities)
     if hmm.xi.dirty
         y = observations( hmm )
         T = length(y)
@@ -231,25 +264,27 @@ function conditionaljointstateprobabilities( hmm::GaussianHMM )
         beta = backwardprobabilities( hmm )
         proby = likelihood( hmm )
         b = probability( hmm )
+        GCTools.push!(:calculation)
         for i = 1:T-1
             hmm.xi.data[i,:,:] = hmm.transitionprobabilities.*(alpha[i,:]*(beta[i+1,:].*b[i+1,:])')/proby
         end
+        GCTools.pop!()
 
         hmm.xi.dirty = false
     end
+    GCTools.pop!()
     return hmm.xi.data
 end
 
-function emstep( hmm::GaussianHMM, nexthmm::GaussianHMM; usestationary::Bool = false )
-    GCTools.checkpoint(:emstep)
+function emstep( hmm::GaussianHMM{Calc,Out}, nexthmm::GaussianHMM; usestationary::Bool = false ) where {Calc,Out}
+    GCTools.push!(:emstep)
     y = observations( hmm )
     T = length(y)
-    GCTools.checkpoint(:conditionalstateprobabilities)
+    
     gamma = conditionalstateprobabilities( hmm )
     occupation = sum(gamma[1:end-1,:],dims=1)
-    GCTools.checkpoint(:conditionaljointstateprobabilities)
+    
     xi = conditionaljointstateprobabilities( hmm )
-    GCTools.checkpoint(:emstep)
 
     m = length(hmm.initialprobabilities)
     nexthmm.transitionprobabilities = reshape(sum(xi, dims=1), (m,m))./occupation'
@@ -258,11 +293,12 @@ function emstep( hmm::GaussianHMM, nexthmm::GaussianHMM; usestationary::Bool = f
     else
         nexthmm.initialprobabilities = gamma[1,:]
     end
-    nexthmm.means = sum([gamma[i,:]*y[i] for i in 1:T])./vec(occupation)
-    nexthmm.stds = sqrt.(sum([gamma[i,:].*(y[i] .- hmm.means).^2 for i in 1:T])./vec(occupation))
+    
+    nexthmm.means[:] = sum([gamma[i,:]*y[i] for i in 1:T])./vec(occupation)
+    nexthmm.stds[:] = sqrt.(sum([gamma[i,:].*(y[i] .- hmm.means).^2 for i in 1:T])./vec(occupation))
 
     clearscratch( nexthmm )
-    GCTools.checkpoint()
+    GCTools.pop!()
 end
 
 function em( hmm::GaussianHMM{Calc, Out};
@@ -333,6 +369,28 @@ function permutederror( hmm1::GaussianHMM, hmm2::GaussianHMM )
     meanerror = norm( hmm1.means[minperm] - hmm2.means, Inf )
     stderror = norm( hmm1.stds[minperm] - hmm2.stds, Inf )
     return (transitionprobabilities=minerror, means=meanerror, stds=stderror)
+end
+
+function reorder( hmm )
+    perm = sortperm(hmm.means)
+    hmm.means = hmm.means[perm]
+    hmm.stds = hmm.stds[perm]
+    hmm.initialprobabilities = hmm.initialprobabilities[perm]
+    hmm.transitionprobabilities = hmm.transitionprobabilities[perm,perm]
+    return hmm
+end
+
+ppv( io, s, v ) = println( io, rpad( s, 32 ), join([@sprintf("%8.2f", 100*convert(Float64,x)) for x in v]) )
+
+function Base.show( io::IO, hmm::GaussianHMM )
+    ppv( io, "initial probabilities:", hmm.initialprobabilities )
+    ppv( io, "transition probabilities:", hmm.transitionprobabilities[1,:] )
+    for i = 2:size(hmm.transitionprobabilities,1)
+        ppv( io, "", hmm.transitionprobabilities[i,:] )
+    end
+    println( io )
+    ppv( io, "means:", hmm.means )
+    ppv( io, "stds:", hmm.stds )
 end
 
 end # module
