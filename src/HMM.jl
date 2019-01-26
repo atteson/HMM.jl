@@ -134,18 +134,33 @@ function readarray( io::IO, ::Type{Array{T,N}} ) where {T,N}
     end
     v = zeros( T, size... )
     for i = 1:prod(size)
-        v[i] = read( io, T )
+        v[i] = Base.read( io, T )
     end
     return v
 end
 
 function Base.write( io::IO, hmm::GaussianHMM )
-    write( io, hmm.graph )
+    writearray( io, hmm.graph.from )
+    writearray( io, hmm.graph.to )
     writearray( io, hmm.initialprobabilities )
     writearray( io, hmm.transitionprobabilities )
     writearray( io, hmm.means )
     writearray( io, hmm.stds )
     writearray( io, hmm.y )
+end
+
+function Base.read( io::IO, ::Type{GaussianHMM{Calc,Out}} ) where {Calc,Out}
+    from = readarray( io, Vector{Int} )
+    to = readarray( io, Vector{Int} )
+    graph = Digraph( from, to )
+    initialprobabilities = readarray( io, Vector{Calc} )
+    transitionprobabilities = readarray( io, Matrix{Calc} )
+    means = readarray( io, Vector{Out} )
+    stds = readarray( io, Vector{Out} )
+    y = readarray( io, Vector{Out} )
+    return GaussianHMM( graph, initialprobabilities, transitionprobabilities,
+                        means, stds,
+                        nothing, nothing, nothing, nothing, nothing, convert( Calc, NaN ), nothing, Dict{Symbol,Any}() )
 end
 
 function setobservations( hmm::GaussianHMM{Calc}, y::Union{Vector{U},Vector{Interval{U}}} ) where {Calc, U <: Real}

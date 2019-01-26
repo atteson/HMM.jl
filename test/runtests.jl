@@ -12,6 +12,7 @@ close(file)
 file = open( name, "r" )
 y = HMM.readarray( file, Matrix{Float64} )
 close(file)
+rm(name)
 @assert( x == y )
 
 N = 2
@@ -54,6 +55,16 @@ error = HMM.permutederror( hmm1, hmm4 )
 @assert( error.transitionprobabilities < 1e-2 )
 @assert( error.means < 1e-2 )
 @assert( error.stds < 1e-2 )
+
+file = open( name, "w" )
+write( file, hmm4 )
+close(file)
+file = open( name, "r" )
+hmm4a = read( file, typeof(hmm4) )
+close(file)
+fields = [:initialprobabilities, :transitionprobabilities, :means, :stds]
+@assert( all([==( getfield.( [hmm4,hmm4a], field )... ) for field in fields]) )
+@assert( all([==( getfield.( [hmm4.graph,hmm4a.graph], field )... ) for field in [:from,:to]]) )
 
 hmm5 = HMM.randomhmm( HMM.fullyconnected(3), calc=Brob, seed=1 )
 y3 = rand( hmm5, 100000 )
