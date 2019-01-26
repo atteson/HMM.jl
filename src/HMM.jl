@@ -256,22 +256,6 @@ function likelihood( hmm::GaussianHMM{Calc} ) where {Calc}
     return hmm.likelihood
 end
 
-function conditionalstateprobabilities( hmm::GaussianHMM )
-    GCTools.push!(:conditionalstateprobabilities)
-    if hmm.gamma.dirty
-        y = observations( hmm )
-        T = length(y)
-        alpha = forwardprobabilities( hmm )
-        beta = backwardprobabilities( hmm )
-        proby = likelihood( hmm )
-        hmm.gamma.data[:,:] = alpha .* beta/proby
-
-        hmm.gamma.dirty = false
-    end
-    GCTools.pop!()
-    return hmm.gamma.data
-end
-
 function conditionaljointstateprobabilities( hmm::GaussianHMM )
     GCTools.push!(:conditionaljointstateprobabilities)
     if hmm.xi.dirty
@@ -291,6 +275,19 @@ function conditionaljointstateprobabilities( hmm::GaussianHMM )
     end
     GCTools.pop!()
     return hmm.xi.data
+end
+
+function conditionalstateprobabilities( hmm::GaussianHMM )
+    GCTools.push!(:conditionalstateprobabilities)
+    if hmm.gamma.dirty
+        xi = conditionaljointstateprobabilities( hmm )
+        hmm.gamma.data[1:end-1,:] = sum(xi, dims=3)
+        hmm.gamma.data[end,:] = sum(xi[end,:,:], dims=2)
+
+        hmm.gamma.dirty = false
+    end
+    GCTools.pop!()
+    return hmm.gamma.data
 end
 
 function emstep( hmm::GaussianHMM{Calc,Out}, nexthmm::GaussianHMM; usestationary::Bool = false ) where {Calc,Out}
