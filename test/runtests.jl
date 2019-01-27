@@ -1,6 +1,5 @@
 using HMM
 using Brobdingnag
-using GCTools
 using Random
 
 Random.seed!(1)
@@ -46,13 +45,6 @@ error = HMM.permutederror( hmm1, hmm3 )
 @assert( error.transitionprobabilities < 1e-2 )
 @assert( error.means < 1e-2 )
 @assert( error.stds < 1e-2 )
-
-y3 = rand( hmm1, 100000 );
-hmm4 = HMM.randomhmm( hmm1.graph, calc=Brob, seed=2 )
-HMM.setobservations( hmm4, y3 );
-GCTools.reset()
-@time HMM.em( hmm4, debug=2 )
-GCTools.print()
 
 error = HMM.permutederror( hmm1, hmm4 )
 @assert( error.transitionprobabilities < 1e-2 )
