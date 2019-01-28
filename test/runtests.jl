@@ -46,6 +46,10 @@ error = HMM.permutederror( hmm1, hmm3 )
 @assert( error.means < 1e-2 )
 @assert( error.stds < 1e-2 )
 
+hmm4 = HMM.randomhmm( hmm1.graph, calc=Brob, seed=2 )
+HMM.setobservations( hmm4, y2 )
+@time HMM.em( hmm4, debug=2 )
+
 error = HMM.permutederror( hmm1, hmm4 )
 @assert( error.transitionprobabilities < 1e-2 )
 @assert( error.means < 1e-2 )

@@ -213,16 +213,22 @@ function stationary( hmm::GaussianHMM )
     return I[1,:]'*pinv(P)
 end
 
-function forwardprobabilities( hmm::GaussianHMM )
+function forwardprobabilities( hmm::GaussianHMM{Calc,Out} ) where {Calc,Out}
     GCTools.push!(:forwardprobabilities)
     if hmm.alpha.dirty
         y = observations( hmm )
-        N = length(hmm.initialprobabilities)
+        m = length(hmm.initialprobabilities)
         b = probability( hmm )
                                    
         hmm.alpha.data[1,:] = hmm.initialprobabilities .* b[1,:]
         for i = 2:length(y)
-            hmm.alpha.data[i,:] = hmm.transitionprobabilities' * hmm.alpha.data[i-1,:] .* b[i,:]
+            hmm.alpha.data[i,:] = zeros( Calc, m )
+            for j = 1:length(hmm.graph.from)
+                from = hmm.graph.from[j]
+                to = hmm.graph.to[j]
+                hmm.alpha.data[i,to] += hmm.transitionprobabilities[from, to] * hmm.alpha.data[i-1,from] * b[i,to]
+            end
+#            hmm.alpha.data[i,:] = hmm.transitionprobabilities' * hmm.alpha.data[i-1,:] .* b[i,:]
         end
         hmm.alpha.dirty = false
     end
@@ -234,7 +240,7 @@ function backwardprobabilities( hmm::GaussianHMM{Calc, Out} ) where {Calc, Out}
     GCTools.push!(:backwardprobabilities)
     if hmm.beta.dirty
         y = observations( hmm )
-        N = length(hmm.initialprobabilities)
+        m = length(hmm.initialprobabilities)
         hmm.beta.data[end,:] = ones(Calc,length(hmm.initialprobabilities))
         b = probability( hmm )
         for i = length(y):-1:2
