@@ -268,18 +268,25 @@ function likelihood( hmm::GaussianHMM{Calc} ) where {Calc}
     return hmm.likelihood
 end
 
-function conditionaljointstateprobabilities( hmm::GaussianHMM )
+function conditionaljointstateprobabilities( hmm::GaussianHMM{Calc,Out} ) where {Calc,Out}
     GCTools.push!(:conditionaljointstateprobabilities)
     if hmm.xi.dirty
         y = observations( hmm )
-        T = length(y)
+        m = length(hmm.initialprobabilities)
         alpha = forwardprobabilities( hmm )
         beta = backwardprobabilities( hmm )
         proby = likelihood( hmm )
         b = probability( hmm )
         GCTools.push!(:calculation)
-        for i = 1:T-1
-            hmm.xi.data[i,:,:] = hmm.transitionprobabilities.*(alpha[i,:]*(beta[i+1,:].*b[i+1,:])')/proby
+        for i = 1:length(y)-1
+            hmm.xi.data[i,:,:] = zeros( Calc, m, m )
+            for j = 1:length(hmm.graph.from)
+                from = hmm.graph.from[j]
+                to = hmm.graph.to[j]
+                hmm.xi.data[i,from,to] += hmm.transitionprobabilities[from,to] * alpha[i,from] * beta[i+1,to] * b[i+1,to]
+            end
+            hmm.xi.data[i,:,:] /= proby
+#            hmm.xi.data[i,:,:] = hmm.transitionprobabilities.*(alpha[i,:]*(beta[i+1,:].*b[i+1,:])')/proby
         end
         GCTools.pop!()
 
