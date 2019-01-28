@@ -397,7 +397,9 @@ end
 ppv( io, s, v ) = println( io, rpad( s, 32 ), join([@sprintf("%8.2f", 100*convert(Float64,x)) for x in v]) )
 
 function Base.show( io::IO, hmm::GaussianHMM )
+    println( io )
     ppv( io, "initial probabilities:", hmm.initialprobabilities )
+    println( io )
     ppv( io, "transition probabilities:", hmm.transitionprobabilities[1,:] )
     for i = 2:size(hmm.transitionprobabilities,1)
         ppv( io, "", hmm.transitionprobabilities[i,:] )
