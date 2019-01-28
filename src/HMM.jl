@@ -244,7 +244,13 @@ function backwardprobabilities( hmm::GaussianHMM{Calc, Out} ) where {Calc, Out}
         hmm.beta.data[end,:] = ones(Calc,length(hmm.initialprobabilities))
         b = probability( hmm )
         for i = length(y):-1:2
-            hmm.beta.data[i-1,:] = hmm.transitionprobabilities * (hmm.beta.data[i,:] .* b[i,:])
+            hmm.beta.data[i-1,:] = zeros( Calc, m )
+            for j = 1:length(hmm.graph.from)
+                from = hmm.graph.from[j]
+                to = hmm.graph.to[j]
+                hmm.beta.data[i-1,from] += hmm.transitionprobabilities[from,to] * hmm.beta.data[i,to] * b[i,to]
+            end
+#            hmm.beta.data[i-1,:] = hmm.transitionprobabilities * (hmm.beta.data[i,:] .* b[i,:])
         end
         hmm.beta.dirty = false
     end

@@ -47,7 +47,7 @@ error = HMM.permutederror( hmm1, hmm3 )
 @assert( error.stds < 1e-2 )
 
 hmm4 = HMM.randomhmm( hmm1.graph, calc=Brob, seed=2 )
-HMM.setobservations( hmm4, y2 )
+HMM.setobservations( hmm4, y2 );
 @time HMM.em( hmm4, debug=2 )
 
 error = HMM.permutederror( hmm1, hmm4 )
@@ -66,8 +66,8 @@ fields = [:initialprobabilities, :transitionprobabilities, :means, :stds]
 @assert( all([==( getfield.( [hmm4.graph,hmm4a.graph], field )... ) for field in [:from,:to]]) )
 
 hmm5 = HMM.randomhmm( HMM.fullyconnected(3), calc=Brob, seed=1 )
-y3 = rand( hmm5, 100000 )
+y3 = rand( hmm5, 100000 );
 hmm6 = HMM.randomhmm( HMM.fullyconnected(3), calc=Brob, seed=2 )
-HMM.setobservations( hmm6, y3 )
+HMM.setobservations( hmm6, y3 );
 @time HMM.em( hmm6, debug=2, maxiterations=100 )
 
