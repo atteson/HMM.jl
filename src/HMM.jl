@@ -47,11 +47,6 @@ Base.copy( da::DirtyArray ) = DirtyArray( copy( da.data ), da.dirty )
 const DirtyVector{T} = DirtyArray{T,1} where {T}
 const DirtyMatrix{T} = DirtyArray{T,2} where {T}
 
-struct Interval{T<:Number}
-    lo::T
-    hi::T
-end
-
 mutable struct GaussianHMM{Calc <: Real, Out <: Real}
     graph::Digraph
     initialprobabilities::Vector{Calc}
@@ -198,7 +193,7 @@ function Base.read( io::IO, ::Type{GaussianHMM{Calc,Out}} ) where {Calc,Out}
     return hmm
 end
 
-function setobservations( hmm::GaussianHMM{Calc}, y::Union{Vector{U},Vector{Interval{U}}} ) where {Calc, U <: Real}
+function setobservations( hmm::GaussianHMM{Calc}, y::Vector{U} ) where {Calc, U <: Real}
     T = length(y)
     m = length(hmm.initialprobabilities)
     
@@ -213,10 +208,6 @@ function setobservations( hmm::GaussianHMM{Calc}, y::Union{Vector{U},Vector{Inte
 end
 
 observations( hmm::GaussianHMM ) = hmm.y
-
-probability( d::Distribution, x::N ) where {N <: Number} = pdf( d, x )
-   
-probability( d::Distribution, i::Interval ) = cdf( d, i.hi ) - cdf( d, i.lo )
 
 function probability( hmm::GaussianHMM )
     GCTools.push!(:probability)
