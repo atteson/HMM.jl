@@ -61,6 +61,7 @@ close(file)
 file = open( name, "r" )
 hmm4a = read( file, typeof(hmm4) )
 close(file)
+rm(name)
 fields = [:initialprobabilities, :transitionprobabilities, :means, :stds]
 @assert( all([==( getfield.( [hmm4,hmm4a], field )... ) for field in fields]) )
 @assert( all([==( getfield.( [hmm4.graph,hmm4a.graph], field )... ) for field in [:from,:to]]) )

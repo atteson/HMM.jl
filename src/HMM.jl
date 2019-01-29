@@ -40,11 +40,12 @@ mutable struct DirtyArray{T,N}
 end
 
 DirtyArray( a::Array{T,N} ) where {T,N} = DirtyArray{T,N}( a, true )
+DirtyArray{T,N}() where {T,N} = DirtyArray( zeros( T, fill(0,N)... ), true )
 
 Base.copy( da::DirtyArray ) = DirtyArray( copy( da.data ), da.dirty )
 
-const DirtyVector{T} = Union{DirtyArray{T,1},Nothing} where {T}
-const DirtyMatrix{T} = Union{DirtyArray{T,2},Nothing} where {T}
+const DirtyVector{T} = DirtyArray{T,1} where {T}
+const DirtyMatrix{T} = DirtyArray{T,2} where {T}
 
 struct Interval{T<:Number}
     lo::T
@@ -61,19 +62,38 @@ mutable struct GaussianHMM{Calc <: Real, Out <: Real}
     alpha::DirtyMatrix{Calc}
     beta::DirtyMatrix{Calc}
     gamma::DirtyMatrix{Calc}
-    xi::Union{DirtyArray{Calc,3},Nothing}
+    xi::DirtyArray{Calc,3}
     b::DirtyMatrix{Calc}
     likelihood::Calc
-    y::Union{Vector{Out},Vector{Interval{Out}},Nothing}
-    
+
+    y::Vector{Out}
+
+    dalpha::DirtyArray{Calc,3}
+
     scratch::Dict{Symbol,Any}
 end
 
-GaussianHMM( g::Digraph, pi::Vector{Calc}, a::Matrix{Calc}, mu::Vector{Out}, sigma::Vector{Out};
-                      scratch::Dict{Symbol,Any} = Dict{Symbol,Any}(), ) where {Calc, Out} =
-                          GaussianHMM{Calc, Out}( g, pi, a, mu, sigma,
-                                                  nothing, nothing, nothing, nothing, nothing, convert( Calc, NaN ), nothing,
-                                                  scratch )
+function GaussianHMM(
+    g::Digraph,
+    pi::Vector{Calc},
+    a::Matrix{Calc},
+    mu::Vector{Out},
+    sigma::Vector{Out};
+    scratch::Dict{Symbol,Any} = Dict{Symbol,Any}(),
+) where {Calc, Out}
+    return GaussianHMM(
+        g, pi, a, mu, sigma,
+        DirtyMatrix{Calc}(),
+        DirtyMatrix{Calc}(),
+        DirtyMatrix{Calc}(),
+        DirtyArray{Calc,3}(),
+        DirtyMatrix{Calc}(),
+        convert( Calc, NaN ),
+        Vector{Out}(),
+        DirtyArray{Calc,3}(),
+        scratch,
+    )
+end
 
 Base.copy( hmm::GaussianHMM ) =
     GaussianHMM(
@@ -81,15 +101,22 @@ Base.copy( hmm::GaussianHMM ) =
         copy( hmm.initialprobabilities ), copy( hmm.transitionprobabilities ),
         copy( hmm.means ), copy( hmm.stds ),
         copy( hmm.alpha ), copy( hmm.beta ), copy( hmm.gamma ), copy( hmm.xi ), copy( hmm.b ), hmm.likelihood, copy( hmm.y ),
+        copy( hmm.dalpha ),
         copy( hmm.scratch ),
     )
 
-function randomhmm( g::Digraph; calc::DataType = Float64, out::DataType = Float64, seed::Int = 1 )
+function randomhmm(
+    g::Digraph;
+    calc::DataType = Float64,
+    out::DataType = Float64,
+    seed::Int = 1,
+)
     Random.seed!( seed )
     
     numstates = max( maximum( g.from ), maximum( g.to ) )
     initialprobabilities = Vector{calc}(rand( numstates ))
     initialprobabilities ./= sum( initialprobabilities )
+#    initialprobabilities = [one(calc); zeros(calc, numstates-1)]
 
     transitionprobabilities = zeros( calc, numstates, numstates )
     for i = 1:length(g.from)
@@ -117,22 +144,12 @@ function Base.rand( hmm::GaussianHMM, n::Int )
     return observations
 end
 
-function clearscratch( hmm::GaussianHMM{Calc} ) where {Calc}
-    if hmm.alpha != nothing
-        hmm.alpha.dirty = true
-    end
-    if hmm.beta != nothing
-        hmm.beta.dirty = true
-    end
-    if hmm.gamma != nothing
-        hmm.gamma.dirty = true
-    end
-    if hmm.xi != nothing
-        hmm.xi.dirty = true
-    end
-    if hmm.b != nothing
-        hmm.b.dirty = true
-    end
+function clear( hmm::GaussianHMM{Calc} ) where {Calc}
+    hmm.alpha.dirty = true
+    hmm.beta.dirty = true
+    hmm.gamma.dirty = true
+    hmm.xi.dirty = true
+    hmm.b.dirty = true
     hmm.likelihood = convert( Calc, NaN )
 end
 
@@ -176,9 +193,7 @@ function Base.read( io::IO, ::Type{GaussianHMM{Calc,Out}} ) where {Calc,Out}
     means = readarray( io, Vector{Out} )
     stds = readarray( io, Vector{Out} )
     y = readarray( io, Vector{Out} )
-    hmm = GaussianHMM( graph, initialprobabilities, transitionprobabilities,
-                       means, stds,
-                       nothing, nothing, nothing, nothing, nothing, convert( Calc, NaN ), nothing, Dict{Symbol,Any}() )
+    hmm = GaussianHMM( graph, initialprobabilities, transitionprobabilities, means, stds )
     setobservations( hmm, y )
     return hmm
 end
@@ -193,16 +208,11 @@ function setobservations( hmm::GaussianHMM{Calc}, y::Union{Vector{U},Vector{Inte
     hmm.xi = DirtyArray( zeros( Calc, T-1, m, m ) )
     hmm.b = DirtyArray( zeros( Calc, T, m ) )
     
-    clearscratch( hmm )
+    clear( hmm )
     hmm.y = y
 end
 
-function observations( hmm::GaussianHMM )
-    if hmm.y == nothing
-        error( "Need to set observations in order to perform calculation" )
-    end
-    return hmm.y
-end
+observations( hmm::GaussianHMM ) = hmm.y
 
 probability( d::Distribution, x::N ) where {N <: Number} = pdf( d, x )
    
@@ -238,6 +248,27 @@ function forwardprobabilities( hmm::GaussianHMM{Calc,Out} ) where {Calc,Out}
         b = probability( hmm )
                                    
         hmm.alpha.data[1,:] = hmm.initialprobabilities .* b[1,:]
+        hmm.alpha.data[2:T,:] = zeros( Calc, (T-1,m) )
+        for i = 2:T
+            for j = 1:length(hmm.graph.from)
+                from = hmm.graph.from[j]
+                to = hmm.graph.to[j]
+                hmm.alpha.data[i,to] += hmm.transitionprobabilities[from, to] * hmm.alpha.data[i-1,from] * b[i,to]
+            end
+        end
+        hmm.alpha.dirty = false
+    end
+    GCTools.pop!()
+    return hmm.alpha.data
+end
+
+function dforwardprobabilities( hmm::GaussianHMM{Calc,Out} ) where {Calc,Out}
+    GCTools.push!(:forwardprobabilities)
+    if hmm.dalpha.dirty
+        (T,m) = size(hmm.alpha.data)
+        b = probability( hmm )
+                                   
+        hmm.dalpha.data[1,:] = hmm.initialprobabilities .* b[1,:]
         hmm.alpha.data[2:T,:] = zeros( Calc, (T-1,m) )
         for i = 2:T
             for j = 1:length(hmm.graph.from)
@@ -317,7 +348,7 @@ function conditionalstateprobabilities( hmm::GaussianHMM )
     if hmm.gamma.dirty
         xi = conditionaljointstateprobabilities( hmm )
         hmm.gamma.data[1:end-1,:] = sum(xi, dims=3)
-        hmm.gamma.data[end,:] = sum(xi[end,:,:], dims=2)
+        hmm.gamma.data[end,:] = sum(xi[end,:,:], dims=1)
 
         hmm.gamma.dirty = false
     end
@@ -325,7 +356,7 @@ function conditionalstateprobabilities( hmm::GaussianHMM )
     return hmm.gamma.data
 end
 
-function emstep( hmm::GaussianHMM{Calc,Out}, nexthmm::GaussianHMM; usestationary::Bool = false ) where {Calc,Out}
+function emstep( hmm::GaussianHMM{Calc,Out}, nexthmm::GaussianHMM ) where {Calc,Out}
     GCTools.push!(:emstepinit)
     y = observations( hmm )
     T = length(y)
@@ -339,11 +370,11 @@ function emstep( hmm::GaussianHMM{Calc,Out}, nexthmm::GaussianHMM; usestationary
     m = length(hmm.initialprobabilities)
     nexthmm.transitionprobabilities = reshape(sum(xi, dims=1), (m,m))./occupation'
     GCTools.replace!(:emstepinitial)
-    if usestationary
-        nexthmm.initialprobabilities = stationary( nexthmm )
-    else
+#    if usestationary
+#        nexthmm.initialprobabilities = stationary( nexthmm )
+#    else
         nexthmm.initialprobabilities = gamma[1,:]
-    end
+#    end
     
     GCTools.replace!(:emstepmeans)
 #    nexthmm.means[:] = sum([gamma[i,:]*y[i] for i in 1:T])./vec(occupation)
@@ -352,15 +383,16 @@ function emstep( hmm::GaussianHMM{Calc,Out}, nexthmm::GaussianHMM; usestationary
 #    nexthmm.stds[:] = sqrt.(sum([gamma[i,:].*(y[i] .- hmm.means).^2 for i in 1:T])./vec(occupation))
     nexthmm.stds[:] = sqrt.(diag(gamma' * (y .- hmm.means').^2)./vec(occupation))
 
-    clearscratch( nexthmm )
+    clear( nexthmm )
     GCTools.pop!()
 end
 
-function em( hmm::GaussianHMM{Calc, Out};
-             epsilon::Float64 = 0.0,
-             debug::Int = 0,
-             maxiterations::Iter = Inf,
-             usestationary::Bool = false ) where {Calc, Out, Iter <: Number}
+function em(
+    hmm::GaussianHMM{Calc, Out};
+    epsilon::Float64 = 0.0,
+    debug::Int = 0,
+    maxiterations::Iter = Inf,
+) where {Calc, Out, Iter <: Number}
     t0 = Base.time()
     nexthmm = copy( hmm )
     hmms = [hmm, nexthmm]
@@ -374,7 +406,8 @@ function em( hmm::GaussianHMM{Calc, Out};
         if debug >= 2
             println( "Likelihood = $newlikelihood" )
         end
-        emstep( hmms[i], hmms[3-i], usestationary=usestationary )
+#        emstep( hmms[i], hmms[3-i], usestationary=usestationary )
+        emstep( hmms[i], hmms[3-i] )
         oldlikelihood = newlikelihood
         done = any(isnan.(hmms[3-i].initialprobabilities)) || any(isnan.(hmms[3-i].transitionprobabilities)) ||
             any(isnan.(hmms[3-i].means)) || any(isnan.(hmms[3-i].stds)) || any(hmms[3-i].stds.<=0) ||
