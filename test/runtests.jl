@@ -71,3 +71,10 @@ hmm6 = HMM.randomhmm( HMM.fullyconnected(3), calc=Brob, seed=2 )
 HMM.setobservations( hmm6, y3 );
 @time HMM.em( hmm6, debug=2, maxiterations=100 )
 
+graph = HMM.Digraph( [(1,1),(1,2),(2,2),(2,3),(3,3)] )
+hmm6 = HMM.randomhmm( graph, calc=Brob, seed=1 )
+y4 = rand( hmm6, 100000 );
+hmm7 = HMM.randomhmm( HMM.fullyconnected(3), calc=Brob, seed=2 )
+HMM.setobservations( hmm7, y4 )
+@time HMM.em( hmm7, debug=2 )
+

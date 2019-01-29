@@ -59,9 +59,7 @@ version = "0.16.4"
 
 [[GCTools]]
 deps = ["DataStructures"]
-git-tree-sha1 = "edff5d940413a0fdf95b848d5941a29f34c83fef"
-repo-rev = "master"
-repo-url = "myenvironment/dev/GCTools"
+path = "../GCTools"
 uuid = "85ef0494-dded-11e8-3885-61befe3cff66"
 version = "0.1.0"
 

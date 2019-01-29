@@ -12,6 +12,19 @@ struct Digraph
     to::Array{Int}
 end
 
+function unzip( zipper::Vector{Tuple{Int,Int}} )
+    n = length(zipper)
+    from = fill( 0, n )
+    to = fill( 0, n )
+    for i = 1:length(zipper)
+        from[i] = zipper[i][1]
+        to[i] = zipper[i][2]
+    end
+    return (from, to)
+end
+
+Digraph( zipper::Vector{Tuple{Int,Int}} ) = Digraph( unzip( zipper )... )
+
 Base.copy( g::Digraph ) = Digraph( copy( g.from ), copy( g.to ) )
 
 function addedge( g::Digraph, from::Int, to::Int )
@@ -77,8 +90,13 @@ function randomhmm( g::Digraph; calc::DataType = Float64, out::DataType = Float6
     numstates = max( maximum( g.from ), maximum( g.to ) )
     initialprobabilities = Vector{calc}(rand( numstates ))
     initialprobabilities ./= sum( initialprobabilities )
-    transitionprobabilities = Matrix{calc}(rand( numstates, numstates ))
+
+    transitionprobabilities = zeros( calc, numstates, numstates )
+    for i = 1:length(g.from)
+        transitionprobabilities[g.from[i], g.to[i]] = rand()
+    end
     transitionprobabilities ./= sum( transitionprobabilities, dims=2 )
+    
     means = Vector{out}(randn( numstates ))
     stds = Vector{out}(randn( numstates ).^2)
     scratch = Dict{Symbol,Any}()
@@ -216,19 +234,17 @@ end
 function forwardprobabilities( hmm::GaussianHMM{Calc,Out} ) where {Calc,Out}
     GCTools.push!(:forwardprobabilities)
     if hmm.alpha.dirty
-        y = observations( hmm )
-        m = length(hmm.initialprobabilities)
+        (T,m) = size(hmm.alpha.data)
         b = probability( hmm )
                                    
         hmm.alpha.data[1,:] = hmm.initialprobabilities .* b[1,:]
-        for i = 2:length(y)
-            hmm.alpha.data[i,:] = zeros( Calc, m )
+        hmm.alpha.data[2:T,:] = zeros( Calc, (T-1,m) )
+        for i = 2:T
             for j = 1:length(hmm.graph.from)
                 from = hmm.graph.from[j]
                 to = hmm.graph.to[j]
                 hmm.alpha.data[i,to] += hmm.transitionprobabilities[from, to] * hmm.alpha.data[i-1,from] * b[i,to]
             end
-#            hmm.alpha.data[i,:] = hmm.transitionprobabilities' * hmm.alpha.data[i-1,:] .* b[i,:]
         end
         hmm.alpha.dirty = false
     end
@@ -239,18 +255,17 @@ end
 function backwardprobabilities( hmm::GaussianHMM{Calc, Out} ) where {Calc, Out}
     GCTools.push!(:backwardprobabilities)
     if hmm.beta.dirty
-        y = observations( hmm )
-        m = length(hmm.initialprobabilities)
-        hmm.beta.data[end,:] = ones(Calc,length(hmm.initialprobabilities))
+        (T,m) = size(hmm.beta.data)
         b = probability( hmm )
-        for i = length(y):-1:2
-            hmm.beta.data[i-1,:] = zeros( Calc, m )
+        
+        hmm.beta.data[end,:] = ones(Calc,length(hmm.initialprobabilities))
+        hmm.beta.data[1:T-1,:] = zeros( Calc, (T-1,m) )
+        for i = T:-1:2
             for j = 1:length(hmm.graph.from)
                 from = hmm.graph.from[j]
                 to = hmm.graph.to[j]
                 hmm.beta.data[i-1,from] += hmm.transitionprobabilities[from,to] * hmm.beta.data[i,to] * b[i,to]
             end
-#            hmm.beta.data[i-1,:] = hmm.transitionprobabilities * (hmm.beta.data[i,:] .* b[i,:])
         end
         hmm.beta.dirty = false
     end
@@ -271,23 +286,24 @@ end
 function conditionaljointstateprobabilities( hmm::GaussianHMM{Calc,Out} ) where {Calc,Out}
     GCTools.push!(:conditionaljointstateprobabilities)
     if hmm.xi.dirty
-        y = observations( hmm )
-        m = length(hmm.initialprobabilities)
         alpha = forwardprobabilities( hmm )
         beta = backwardprobabilities( hmm )
         proby = likelihood( hmm )
         b = probability( hmm )
-        GCTools.push!(:calculation)
-        for i = 1:length(y)-1
-            hmm.xi.data[i,:,:] = zeros( Calc, m, m )
+        (T,m) = size(alpha)
+        
+        GCTools.push!(:initializecalculation)
+        hmm.xi.data[1:T-1,:,:] = zeros( Calc, (T-1,m,m) )
+        GCTools.replace!(:calculation)
+        for i = 1:T-1
             for j = 1:length(hmm.graph.from)
                 from = hmm.graph.from[j]
                 to = hmm.graph.to[j]
                 hmm.xi.data[i,from,to] += hmm.transitionprobabilities[from,to] * alpha[i,from] * beta[i+1,to] * b[i+1,to]
             end
-            hmm.xi.data[i,:,:] /= proby
-#            hmm.xi.data[i,:,:] = hmm.transitionprobabilities.*(alpha[i,:]*(beta[i+1,:].*b[i+1,:])')/proby
         end
+        GCTools.replace!(:normalize)
+        hmm.xi.data[:,:,:] /= proby
         GCTools.pop!()
 
         hmm.xi.dirty = false
@@ -310,7 +326,7 @@ function conditionalstateprobabilities( hmm::GaussianHMM )
 end
 
 function emstep( hmm::GaussianHMM{Calc,Out}, nexthmm::GaussianHMM; usestationary::Bool = false ) where {Calc,Out}
-    GCTools.push!(:emstep)
+    GCTools.push!(:emstepinit)
     y = observations( hmm )
     T = length(y)
     
@@ -319,16 +335,22 @@ function emstep( hmm::GaussianHMM{Calc,Out}, nexthmm::GaussianHMM; usestationary
     
     xi = conditionaljointstateprobabilities( hmm )
 
+    GCTools.replace!(:emsteptransition)
     m = length(hmm.initialprobabilities)
     nexthmm.transitionprobabilities = reshape(sum(xi, dims=1), (m,m))./occupation'
+    GCTools.replace!(:emstepinitial)
     if usestationary
         nexthmm.initialprobabilities = stationary( nexthmm )
     else
         nexthmm.initialprobabilities = gamma[1,:]
     end
     
-    nexthmm.means[:] = sum([gamma[i,:]*y[i] for i in 1:T])./vec(occupation)
-    nexthmm.stds[:] = sqrt.(sum([gamma[i,:].*(y[i] .- hmm.means).^2 for i in 1:T])./vec(occupation))
+    GCTools.replace!(:emstepmeans)
+#    nexthmm.means[:] = sum([gamma[i,:]*y[i] for i in 1:T])./vec(occupation)
+    nexthmm.means[:] = gamma' * y./vec(occupation)
+    GCTools.replace!(:emstepstds)
+#    nexthmm.stds[:] = sqrt.(sum([gamma[i,:].*(y[i] .- hmm.means).^2 for i in 1:T])./vec(occupation))
+    nexthmm.stds[:] = sqrt.(diag(gamma' * (y .- hmm.means').^2)./vec(occupation))
 
     clearscratch( nexthmm )
     GCTools.pop!()

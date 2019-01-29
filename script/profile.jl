@@ -6,10 +6,10 @@ using GCTools
 
 hmm1 = HMM.randomhmm( HMM.fullyconnected(2), calc=Brob )
 y = HMM.rand( hmm1, 100000 );
+
 hmm2 = HMM.randomhmm( HMM.fullyconnected(2), calc=Brob, seed=2 )
 HMM.setobservations( hmm2, y );
-HMM.em( hmm2 )
-
+@time HMM.em( hmm2 )
 hmm2 = HMM.randomhmm( HMM.fullyconnected(2), calc=Brob, seed=2 )
 HMM.setobservations( hmm2, y );
 GCTools.reset()
@@ -26,6 +26,7 @@ hmm2 = HMM.randomhmm( HMM.fullyconnected(2), calc=Brob, seed=2 )
 HMM.setobservations( hmm2, y );
 @time HMM.em( hmm2 )
 # 2.02s
+# 1.40s
 
 x = rand( 100000 )
 bx = convert( Vector{Brob}, x )
