@@ -85,3 +85,27 @@ error = HMM.permutederror( hmm6, hmm7 )
 @assert( error.transitionprobabilities < 1e-2 )
 @assert( error.means < 1e-2 )
 @assert( error.stds < 1e-2 )
+
+hmm8 = HMM.randomhmm( graph, calc=Brob, seed=4 )
+HMM.setobservations( hmm8, y4 );
+@time HMM.em( hmm8, debug=2 )
+HMM.reorder(hmm8)
+HMM.reorder(hmm6)
+
+error = HMM.permutederror( hmm6, hmm7 )
+@assert( error.transitionprobabilities < 1e-2 )
+@assert( error.means < 1e-2 )
+@assert( error.stds < 1e-2 )
+
+hmm9 = HMM.randomhmm( graph, calc=Brob, seed=4 )
+hmm9.initialprobabilities = [1.0; zeros(2)]
+HMM.setobservations( hmm9, y4 );
+@time HMM.em( hmm9, debug=2 )
+HMM.reorder(hmm9)
+HMM.reorder(hmm6)
+
+error = HMM.permutederror( hmm6, hmm7 )
+@assert( error.transitionprobabilities < 1e-2 )
+@assert( error.means < 1e-2 )
+@assert( error.stds < 1e-2 )
+
