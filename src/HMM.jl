@@ -34,6 +34,42 @@ end
 
 fullyconnected( n::Int ) = Digraph( vcat( [collect(1:n) for i in 1:n]... ), vcat( [fill(i,n) for i in 1:n]... ) )
 
+# The Trie's in DataStructures.jl only seem to allow strings for keys
+# We're going to assume Vector{Int} for keys and fixed maximum in each dimension
+mutable struct TrieHead{V,T}
+    size::Vector{Int}
+    default::V
+    data::Vector{Union{Missing,T}}
+end
+
+struct TrieNode{T}
+    data::Vector{Union{Missing,T}}
+end
+
+TrieType( size::Vector{Int}, vt::DataType ) =
+    isempty(size) ? vt : TrieType( size[2:end], TrieNode{vt} )
+
+Trie( size::Vector{Int}, default::V ) where {V} =
+    TrieHead( size, default, Vector{Union{TrieType( size[2:end], V ),Missing}}(missing, size[1]) )
+
+function Base.setindex!( head::TrieHead{V,T}, v::V, indices::Int... ) where {V,T}
+    if ismissing(head.data[indices[1]])
+        head.data[indices[1]] = TrieNode( Vector{Union{Missing,T}}( missing, head.size[1] ) )
+    end
+    set!( head.data[indices[1]], head.size[2:end], v, indices[2:end] )
+end
+
+function set!( node::TrieNode{T}, size::Vector{Int}, v::V, indices::Int... ) where {T,V}
+    if isempty(size)
+        node.data[indices[1]] = v
+    else
+        if ismissing( node.data[indices[1]] )
+            node.data[indices[1]] = Vector{Union{Missing,T}}( missing, size[1] )
+        end
+        set!( node.data[indices[1]], size[2:end], v, indices[2:end] )
+    end
+end
+
 mutable struct DirtyArray{T,N}
     data::Array{T,N}
     dirty::Bool
@@ -54,49 +90,66 @@ mutable struct GaussianHMM{Calc <: Real, Out <: Real}
     means::Vector{Out}
     stds::Vector{Out}
 
-    alpha::DirtyMatrix{Calc}
-    beta::DirtyMatrix{Calc}
-    gamma::DirtyMatrix{Calc}
-    xi::DirtyArray{Calc,3}
     b::DirtyMatrix{Calc}
+    db::DirtyArray{Calc,3}
+    
+    alpha::DirtyMatrix{Calc}
+    
+    beta::DirtyMatrix{Calc}
+    
+    xi::DirtyArray{Calc,3}
+    
+    gamma::DirtyMatrix{Calc}
+    
     likelihood::Calc
 
     y::Vector{Out}
 
-    dalpha::DirtyArray{Calc,3}
-
     scratch::Dict{Symbol,Any}
 end
 
-function GaussianHMM(
+GaussianHMM(
     g::Digraph,
     pi::Vector{Calc},
     a::Matrix{Calc},
     mu::Vector{Out},
     sigma::Vector{Out};
     scratch::Dict{Symbol,Any} = Dict{Symbol,Any}(),
-) where {Calc, Out}
-    return GaussianHMM(
-        g, pi, a, mu, sigma,
-        DirtyMatrix{Calc}(),
-        DirtyMatrix{Calc}(),
-        DirtyMatrix{Calc}(),
-        DirtyArray{Calc,3}(),
-        DirtyMatrix{Calc}(),
-        convert( Calc, NaN ),
-        Vector{Out}(),
-        DirtyArray{Calc,3}(),
-        scratch,
-    )
-end
+) where {Calc,Out} = GaussianHMM(
+    g, pi, a, mu, sigma,
+        
+    DirtyMatrix{Calc}(),
+    DirtyArray{Calc,3}(),
+        
+    DirtyMatrix{Calc}(),
+        
+    DirtyMatrix{Calc}(),
+        
+    DirtyArray{Calc,3}(),
+        
+    DirtyMatrix{Calc}(),
+        
+    convert( Calc, NaN ),
+        
+    Vector{Out}(),
+        
+    scratch,
+)
 
 Base.copy( hmm::GaussianHMM ) =
     GaussianHMM(
         copy( hmm.graph ),
         copy( hmm.initialprobabilities ), copy( hmm.transitionprobabilities ),
         copy( hmm.means ), copy( hmm.stds ),
-        copy( hmm.alpha ), copy( hmm.beta ), copy( hmm.gamma ), copy( hmm.xi ), copy( hmm.b ), hmm.likelihood, copy( hmm.y ),
-        copy( hmm.dalpha ),
+        
+        copy( hmm.b ),
+        copy( hmm.db ),
+        copy( hmm.alpha ),
+        copy( hmm.beta ),
+        copy( hmm.xi ),
+        copy( hmm.gamma ),
+        hmm.likelihood,
+        copy( hmm.y ),
         copy( hmm.scratch ),
     )
 
@@ -111,7 +164,6 @@ function randomhmm(
     numstates = max( maximum( g.from ), maximum( g.to ) )
     initialprobabilities = Vector{calc}(rand( numstates ))
     initialprobabilities ./= sum( initialprobabilities )
-#    initialprobabilities = [one(calc); zeros(calc, numstates-1)]
 
     transitionprobabilities = zeros( calc, numstates, numstates )
     for i = 1:length(g.from)
@@ -140,11 +192,12 @@ function Base.rand( hmm::GaussianHMM, n::Int )
 end
 
 function clear( hmm::GaussianHMM{Calc} ) where {Calc}
+    hmm.b.dirty = true
+    hmm.db.dirty = true
     hmm.alpha.dirty = true
     hmm.beta.dirty = true
-    hmm.gamma.dirty = true
     hmm.xi.dirty = true
-    hmm.b.dirty = true
+    hmm.gamma.dirty = true
     hmm.likelihood = convert( Calc, NaN )
 end
 
@@ -221,6 +274,10 @@ function probability( hmm::GaussianHMM )
     end
     GCTools.pop!()
     return hmm.b.data
+end
+
+function dprobability( hmm::GaussianHMM )
+    
 end
 
 function stationary( hmm::GaussianHMM )
@@ -361,17 +418,11 @@ function emstep( hmm::GaussianHMM{Calc,Out}, nexthmm::GaussianHMM ) where {Calc,
     m = length(hmm.initialprobabilities)
     nexthmm.transitionprobabilities = reshape(sum(xi, dims=1), (m,m))./occupation'
     GCTools.replace!(:emstepinitial)
-#    if usestationary
-#        nexthmm.initialprobabilities = stationary( nexthmm )
-#    else
-        nexthmm.initialprobabilities = gamma[1,:]
-#    end
+    nexthmm.initialprobabilities = gamma[1,:]
     
     GCTools.replace!(:emstepmeans)
-#    nexthmm.means[:] = sum([gamma[i,:]*y[i] for i in 1:T])./vec(occupation)
     nexthmm.means[:] = gamma' * y./vec(occupation)
     GCTools.replace!(:emstepstds)
-#    nexthmm.stds[:] = sqrt.(sum([gamma[i,:].*(y[i] .- hmm.means).^2 for i in 1:T])./vec(occupation))
     nexthmm.stds[:] = sqrt.(diag(gamma' * (y .- hmm.means').^2)./vec(occupation))
 
     clear( nexthmm )
@@ -397,7 +448,6 @@ function em(
         if debug >= 2
             println( "Likelihood = $newlikelihood" )
         end
-#        emstep( hmms[i], hmms[3-i], usestationary=usestationary )
         emstep( hmms[i], hmms[3-i] )
         oldlikelihood = newlikelihood
         done = any(isnan.(hmms[3-i].initialprobabilities)) || any(isnan.(hmms[3-i].transitionprobabilities)) ||
