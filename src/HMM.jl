@@ -35,18 +35,20 @@ end
 
 fullyconnected( n::Int ) = Digraph( vcat( [collect(1:n) for i in 1:n]... ), vcat( [fill(i,n) for i in 1:n]... ) )
 
-mutable struct DirtyArray{T,N}
-    data::AbstractArray{T,N}
+mutable struct DirtyArray{A <: AbstractArray}
+#    data::Array{T,N}
+    data::A
     dirty::Bool
 end
 
-DirtyArray( a::AbstractArray{T,N} ) where {T,N} = DirtyArray{T,N}( a, true )
-DirtyArray{T,N}() where {T,N} = DirtyArray( zeros( T, fill(0,N)... ), true )
+DirtyArray( a::A ) where {A} = DirtyArray{A}( a, true )
+DirtyArray{A}() where {T,N,A <: AbstractArray{T,N}} =
+    DirtyArray( convert( A, zeros( T, fill(0,N)... ) ), true )
 
 Base.copy( da::DirtyArray ) = DirtyArray( copy( da.data ), da.dirty )
 
-const DirtyVector{T} = DirtyArray{T,1} where {T}
-const DirtyMatrix{T} = DirtyArray{T,2} where {T}
+const DirtyVector{T} = DirtyArray{Vector{T}} where {T}
+const DirtyMatrix{T} = DirtyArray{Matrix{T}} where {T}
 
 mutable struct GaussianHMM{Calc <: Real, Out <: Real}
     graph::Digraph
@@ -56,13 +58,13 @@ mutable struct GaussianHMM{Calc <: Real, Out <: Real}
     stds::Vector{Out}
 
     b::DirtyMatrix{Calc}
-    db::DirtyArray{Calc,3}
+    db::DirtyArray{Array{Calc,3}}
     
     alpha::DirtyMatrix{Calc}
     
     beta::DirtyMatrix{Calc}
     
-    xi::DirtyArray{Calc,3}
+    xi::DirtyArray{Array{Calc,3}}
     
     gamma::DirtyMatrix{Calc}
     
@@ -84,13 +86,13 @@ GaussianHMM(
     g, pi, a, mu, sigma,
         
     DirtyMatrix{Calc}(),
-    DirtyArray{Calc,3}(),
+    DirtyArray{Array{Calc,3}}(),
         
     DirtyMatrix{Calc}(),
         
     DirtyMatrix{Calc}(),
         
-    DirtyArray{Calc,3}(),
+    DirtyArray{Array{Calc,3}}(),
         
     DirtyMatrix{Calc}(),
         
