@@ -44,13 +44,15 @@ end
 DirtyArray( a::A ) where {A} = DirtyArray{A}( a, true )
 DirtyArray{A}() where {T,N,A <: AbstractArray{T,N}} =
     DirtyArray( convert( A, zeros( T, fill(0,N)... ) ), true )
+DirtyArray{A}() where {V,T,N,A <: Trie{V,T,N}} =
+    DirtyArray( Trie( zero(V), 0, 0, 0 ) )
 
 Base.copy( da::DirtyArray ) = DirtyArray( copy( da.data ), da.dirty )
 
 const DirtyVector{T} = DirtyArray{Vector{T}} where {T}
 const DirtyMatrix{T} = DirtyArray{Matrix{T}} where {T}
 
-mutable struct GaussianHMM{Calc <: Real, Out <: Real}
+mutable struct GaussianHMM{Calc <: Real, Out <: Real, TC3}
     graph::Digraph
     initialprobabilities::Vector{Calc}
     transitionprobabilities::Matrix{Calc}
@@ -58,7 +60,7 @@ mutable struct GaussianHMM{Calc <: Real, Out <: Real}
     stds::Vector{Out}
 
     b::DirtyMatrix{Calc}
-    db::DirtyArray{Array{Calc,3}}
+    db::DirtyArray{Trie{Calc,TC3,3}}
     
     alpha::DirtyMatrix{Calc}
     
@@ -86,7 +88,7 @@ GaussianHMM(
     g, pi, a, mu, sigma,
         
     DirtyMatrix{Calc}(),
-    DirtyArray{Array{Calc,3}}(),
+    DirtyArray{Trie{Calc,Tries.TrieType(Calc, 2),3}}(),
         
     DirtyMatrix{Calc}(),
         
@@ -111,6 +113,7 @@ Base.copy( hmm::GaussianHMM ) =
         
         copy( hmm.b ),
         copy( hmm.db ),
+        
         copy( hmm.alpha ),
         copy( hmm.beta ),
         copy( hmm.xi ),
@@ -142,6 +145,7 @@ function randomhmm(
     stds = Vector{out}(randn( numstates ).^2)
     scratch = Dict{Symbol,Any}()
     scratch[:seed] = seed
+
     return GaussianHMM( g, initialprobabilities, transitionprobabilities, means, stds, scratch=scratch )
 end
 
@@ -199,7 +203,7 @@ function Base.write( io::IO, hmm::GaussianHMM )
     writearray( io, hmm.y )
 end
 
-function Base.read( io::IO, ::Type{GaussianHMM{Calc,Out}} ) where {Calc,Out}
+function Base.read( io::IO, ::Type{GaussianHMM{Calc,Out,TC3}} ) where {Calc,Out,TC3}
     from = readarray( io, Vector{Int} )
     to = readarray( io, Vector{Int} )
     graph = Digraph( from, to )
@@ -222,6 +226,8 @@ function setobservations( hmm::GaussianHMM{Calc}, y::Vector{U} ) where {Calc, U 
     hmm.gamma = DirtyArray( zeros( Calc, T, m ) )
     hmm.xi = DirtyArray( zeros( Calc, T-1, m, m ) )
     hmm.b = DirtyArray( zeros( Calc, T, m ) )
+
+    hmm.db = DirtyArray( Trie( zero(Calc), m*(m+1), m, T ) )
     
     clear( hmm )
     hmm.y = y
