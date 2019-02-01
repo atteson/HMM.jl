@@ -55,6 +55,44 @@ error = HMM.permutederror( hmm1, hmm4 )
 @assert( error.means < 1e-2 )
 @assert( error.stds < 1e-2 )
 
+# check probability derivatives
+epsilon = 1e-6
+b = copy( HMM.probability( hmm4 ) )
+(T,m) = size(b)
+db = copy( HMM.dprobability( hmm4 ) )
+for i = 1:m
+    # first versus transition probabilities
+    for j = 1:m
+        # these are constrained to add to 1 but it shouldn't matter here
+        p = hmm4.transitionprobabilities[i,j]
+        hmm4.transitionprobabilities[i,j] += epsilon
+        HMM.clear( hmm4 )
+        bp = HMM.probability( hmm4 )
+        hmm4.transitionprobabilities[i,j] = p
+        fddb = (bp - b)/epsilon
+        @assert( maximum(abs.(convert(Matrix{Float64},fddb - db[(i-1)*m + j,:,:]'))) < 1e-8 )
+    end
+    
+    # now mean
+    mu = hmm4.means[i]
+    hmm4.means[i] += epsilon
+    HMM.clear( hmm4 )
+    bp = HMM.probability( hmm4 )
+    hmm4.means[i] = mu
+    fddb = (bp - b)/epsilon
+    db[m^2+i,:,:]
+    @assert( maximum(abs.(convert(Matrix{Float64},fddb - db[m^2 + i,:,:]'))) < 1e-4 )
+    
+    # now standard deviation
+    sigma = hmm4.stds[i]
+    hmm4.stds[i] += epsilon
+    HMM.clear( hmm4 )
+    bp = HMM.probability( hmm4 )
+    hmm4.stds[i] = sigma
+    fddb = (bp - b)/epsilon
+    @assert( maximum(abs.(convert(Matrix{Float64},fddb - db[m*(m+1) + i,:,:]'))) < 1e-4 )
+end
+
 file = open( name, "w" )
 write( file, hmm4 )
 close(file)
