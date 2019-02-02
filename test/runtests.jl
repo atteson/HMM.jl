@@ -60,37 +60,76 @@ epsilon = 1e-6
 b = copy( HMM.probability( hmm4 ) )
 (T,m) = size(b)
 db = copy( HMM.dprobability( hmm4 ) )
+
+alpha = copy( HMM.forwardprobabilities( hmm4 ) )
+dalpha = copy( HMM.dforwardprobabilities( hmm4 ) )
+
 for i = 1:m
     # first versus transition probabilities
     for j = 1:m
-        # these are constrained to add to 1 but it shouldn't matter here
+        # note the constraint to add to 1 is handled elsewhere
         p = hmm4.transitionprobabilities[i,j]
+        
         hmm4.transitionprobabilities[i,j] += epsilon
         HMM.clear( hmm4 )
-        bp = HMM.probability( hmm4 )
+        bp = copy( HMM.probability( hmm4 ) )
+        alphap = copy( HMM.forwardprobabilities( hmm4 ) )
         hmm4.transitionprobabilities[i,j] = p
-        fddb = (bp - b)/epsilon
+        
+        hmm4.transitionprobabilities[i,j] -= epsilon
+        HMM.clear( hmm4 )
+        bm = copy( HMM.probability( hmm4 ) )
+        alpham = copy( HMM.forwardprobabilities( hmm4 ) )
+        hmm4.transitionprobabilities[i,j] = p
+        
+        fddb = (bp - bm)/(2*epsilon)
         @assert( maximum(abs.(convert(Matrix{Float64},fddb - db[(i-1)*m + j,:,:]'))) < 1e-8 )
+        
+        fddalpha = (alphap - alpham)/(2*epsilon)
+        @assert( maximum(abs.(convert( Matrix{Float64}, (fddalpha - dalpha[(i-1)*m + j,:,:]')./(1 .+ fddalpha) ))) < 1e-2 )
     end
     
     # now mean
     mu = hmm4.means[i]
+    
     hmm4.means[i] += epsilon
     HMM.clear( hmm4 )
-    bp = HMM.probability( hmm4 )
+    bp = copy( HMM.probability( hmm4 ) )
+    alphap = copy( HMM.forwardprobabilities( hmm4 ) )
     hmm4.means[i] = mu
-    fddb = (bp - b)/epsilon
-    db[m^2+i,:,:]
+    
+    hmm4.means[i] -= epsilon
+    HMM.clear( hmm4 )
+    bm = copy( HMM.probability( hmm4 ) )
+    alpham = copy( HMM.forwardprobabilities( hmm4 ) )
+    hmm4.means[i] = mu
+
+    fddb = (bp - bm)/(2*epsilon)
     @assert( maximum(abs.(convert(Matrix{Float64},fddb - db[m^2 + i,:,:]'))) < 1e-4 )
+
+    fddalpha = (alphap - alpham)/(2*epsilon)
+    @assert( maximum(abs.(convert(Matrix{Float64},(fddalpha - dalpha[m^2 + i,:,:]')./(1 .+ fddalpha)))) < 1e-4 )
     
     # now standard deviation
     sigma = hmm4.stds[i]
+    
     hmm4.stds[i] += epsilon
     HMM.clear( hmm4 )
-    bp = HMM.probability( hmm4 )
+    bp = copy( HMM.probability( hmm4 ) )
+    alphap = copy( HMM.forwardprobabilities( hmm4 ) )
     hmm4.stds[i] = sigma
-    fddb = (bp - b)/epsilon
+    
+    hmm4.stds[i] -= epsilon
+    HMM.clear( hmm4 )
+    bm = copy( HMM.probability( hmm4 ) )
+    alpham = copy( HMM.forwardprobabilities( hmm4 ) )
+    hmm4.stds[i] = sigma
+    
+    fddb = (bp - bm)/(2*epsilon)
     @assert( maximum(abs.(convert(Matrix{Float64},fddb - db[m*(m+1) + i,:,:]'))) < 1e-4 )
+
+    fddalpha = (alphap - alpham)/(2*epsilon)
+    @assert( maximum(abs.(convert(Matrix{Float64},(fddalpha - dalpha[m*(m+1) + i,:,:]')./(1 .+ fddalpha)))) < 1e-3 )
 end
 
 file = open( name, "w" )

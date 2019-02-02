@@ -6,7 +6,6 @@ using Combinatorics
 using LinearAlgebra
 using GCTools
 using Printf
-using Tries
 
 struct Digraph
     from::Array{Int}
@@ -44,15 +43,13 @@ end
 DirtyArray( a::A ) where {A} = DirtyArray{A}( a, true )
 DirtyArray{A}() where {T,N,A <: AbstractArray{T,N}} =
     DirtyArray( convert( A, zeros( T, fill(0,N)... ) ), true )
-DirtyArray{A}() where {V,T,N,A <: Trie{V,T,N}} =
-    DirtyArray( Trie( zero(V), 0, 0, 0 ) )
 
 Base.copy( da::DirtyArray ) = DirtyArray( copy( da.data ), da.dirty )
 
 const DirtyVector{T} = DirtyArray{Vector{T}} where {T}
 const DirtyMatrix{T} = DirtyArray{Matrix{T}} where {T}
 
-mutable struct GaussianHMM{Calc <: Real, Out <: Real, TC3}
+mutable struct GaussianHMM{Calc <: Real, Out <: Real}
     graph::Digraph
     initialprobabilities::Vector{Calc}
     transitionprobabilities::Matrix{Calc}
@@ -60,9 +57,10 @@ mutable struct GaussianHMM{Calc <: Real, Out <: Real, TC3}
     stds::Vector{Out}
 
     b::DirtyMatrix{Calc}
-    db::DirtyArray{Trie{Calc,TC3,3}}
+    db::DirtyArray{Array{Calc,3}}
     
     alpha::DirtyMatrix{Calc}
+    dalpha::DirtyArray{Array{Calc,3}}
     
     beta::DirtyMatrix{Calc}
     
@@ -88,9 +86,10 @@ GaussianHMM(
     g, pi, a, mu, sigma,
         
     DirtyMatrix{Calc}(),
-    DirtyArray{Trie{Calc,Tries.TrieType(Calc, 2),3}}(),
+    DirtyArray{Array{Calc,3}}(),
         
     DirtyMatrix{Calc}(),
+    DirtyArray{Array{Calc,3}}(),
         
     DirtyMatrix{Calc}(),
         
@@ -115,6 +114,8 @@ Base.copy( hmm::GaussianHMM ) =
         copy( hmm.db ),
         
         copy( hmm.alpha ),
+        copy( hmm.dalpha ),
+        
         copy( hmm.beta ),
         copy( hmm.xi ),
         copy( hmm.gamma ),
@@ -165,7 +166,10 @@ end
 function clear( hmm::GaussianHMM{Calc} ) where {Calc}
     hmm.b.dirty = true
     hmm.db.dirty = true
+    
     hmm.alpha.dirty = true
+    hmm.dalpha.dirty = true
+    
     hmm.beta.dirty = true
     hmm.xi.dirty = true
     hmm.gamma.dirty = true
@@ -203,7 +207,7 @@ function Base.write( io::IO, hmm::GaussianHMM )
     writearray( io, hmm.y )
 end
 
-function Base.read( io::IO, ::Type{GaussianHMM{Calc,Out,TC3}} ) where {Calc,Out,TC3}
+function Base.read( io::IO, ::Type{GaussianHMM{Calc,Out}} ) where {Calc,Out}
     from = readarray( io, Vector{Int} )
     to = readarray( io, Vector{Int} )
     graph = Digraph( from, to )
@@ -222,9 +226,11 @@ function setobservations( hmm::GaussianHMM{Calc}, y::Vector{U} ) where {Calc, U 
     m = length(hmm.initialprobabilities)
     
     hmm.b = DirtyArray( zeros( Calc, T, m ) )
-    hmm.db = DirtyArray( Trie( zero(Calc), m*(m+2), m, T ) )
+    hmm.db = DirtyArray( zeros( Calc, m*(m+2), m, T ) )
     
     hmm.alpha = DirtyArray( zeros( Calc, T, m ) )
+    hmm.dalpha = DirtyArray( zeros( Calc, m*(m+2), m, T ) )
+    
     hmm.beta = DirtyArray( zeros( Calc, T, m ) )
     hmm.xi = DirtyArray( zeros( Calc, T-1, m, m ) )
     hmm.gamma = DirtyArray( zeros( Calc, T, m ) )
@@ -299,19 +305,26 @@ function dforwardprobabilities( hmm::GaussianHMM{Calc,Out} ) where {Calc,Out}
     if hmm.dalpha.dirty
         (T,m) = size(hmm.alpha.data)
         b = probability( hmm )
-                                   
-        hmm.dalpha.data[1,:] = hmm.initialprobabilities .* b[1,:]
-        hmm.alpha.data[2:T,:] = zeros( Calc, (T-1,m) )
+        db = dprobability( hmm )
+
+        hmm.dalpha.data[:,:,1] = hmm.initialprobabilities' .* db[:,:,1]
+        hmm.dalpha.data[:,:,2:T] = zeros( m*(m+2), m, T-1 )
         for i = 2:T
             for j = 1:length(hmm.graph.from)
                 from = hmm.graph.from[j]
                 to = hmm.graph.to[j]
-                hmm.alpha.data[i,to] += hmm.transitionprobabilities[from, to] * hmm.alpha.data[i-1,from] * b[i,to]
+                
+                paramindex = (from-1)*m + to
+                hmm.dalpha.data[paramindex,to,i] += hmm.alpha.data[i-1,from] * b[i,to]
+                
+                hmm.dalpha.data[:,to,i] += hmm.transitionprobabilities[from, to] * hmm.dalpha.data[:,from,i-1] * b[i,to]
+                
+                hmm.dalpha.data[:,to,i] += hmm.transitionprobabilities[from, to] * hmm.alpha.data[i-1,from] * db[:,to,i]
             end
         end
         hmm.alpha.dirty = false
     end
-    return hmm.alpha.data
+    return hmm.dalpha.data
 end
 
 function backwardprobabilities( hmm::GaussianHMM{Calc, Out} ) where {Calc, Out}
