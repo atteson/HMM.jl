@@ -48,14 +48,9 @@ error = HMM.permutederror( hmm1, hmm3 )
 
 hmm4 = HMM.randomhmm( hmm1.graph, calc=Brob, seed=2 )
 HMM.setobservations( hmm4, y2 );
-@time HMM.em( hmm4, debug=2 )
 
-error = HMM.permutederror( hmm1, hmm4 )
-@assert( error.transitionprobabilities < 1e-2 )
-@assert( error.means < 1e-2 )
-@assert( error.stds < 1e-2 )
-
-# check probability derivatives
+# check derivatives; need to do this before checking statistical convergence
+# since MLE has 0 likelihood derivative
 epsilon = 1e-6
 b = copy( HMM.probability( hmm4 ) )
 (T,m) = size(b)
@@ -105,10 +100,13 @@ for i = 1:m
     hmm4.means[i] = mu
 
     fddb = (bp - bm)/(2*epsilon)
-    @assert( maximum(abs.(convert(Matrix{Float64},fddb - db[m^2 + i,:,:]'))) < 1e-4 )
+    @assert( maximum(abs.(convert(Matrix{Float64},fddb - db[m^2 + i,:,:]'))) < 1e-4,
+             "Mismatch for b for mean $i" )
 
     fddalpha = (alphap - alpham)/(2*epsilon)
-    @assert( maximum(abs.(convert(Matrix{Float64},(fddalpha - dalpha[m^2 + i,:,:]')./(1 .+ fddalpha)))) < 1e-4 )
+    @assert( maximum(abs.(convert(Matrix{Float64},(fddalpha - dalpha[m^2 + i,:,:]')./(1 .+ fddalpha)))) < 1e-4,
+             "Mismatch for alpha for mean $i" )
+    findall(abs.(convert(Matrix{Float64},(fddalpha - dalpha[m^2 + i,:,:]')./(1 .+ fddalpha))) .> 1e-3)
     
     # now standard deviation
     sigma = hmm4.stds[i]
@@ -126,11 +124,19 @@ for i = 1:m
     hmm4.stds[i] = sigma
     
     fddb = (bp - bm)/(2*epsilon)
-    @assert( maximum(abs.(convert(Matrix{Float64},fddb - db[m*(m+1) + i,:,:]'))) < 1e-4 )
+    @assert( maximum(abs.(convert(Matrix{Float64},fddb - db[m*(m+1) + i,:,:]'))) < 1e-4,
+             "Mismatch for b for std $i" )
 
     fddalpha = (alphap - alpham)/(2*epsilon)
-    @assert( maximum(abs.(convert(Matrix{Float64},(fddalpha - dalpha[m*(m+1) + i,:,:]')./(1 .+ fddalpha)))) < 1e-3 )
+    @assert( maximum(abs.(convert(Matrix{Float64},(fddalpha - dalpha[m*(m+1) + i,:,:]')./(1 .+ fddalpha)))) < 1e-3,
+             "Mismatch for alpha for std $i" )
 end
+
+@time HMM.em( hmm4, debug=2 )
+error = HMM.permutederror( hmm1, hmm4 )
+@assert( error.transitionprobabilities < 1e-2 )
+@assert( error.means < 1e-2 )
+@assert( error.stds < 1e-2 )
 
 file = open( name, "w" )
 write( file, hmm4 )
