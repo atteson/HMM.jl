@@ -69,6 +69,7 @@ mutable struct GaussianHMM{Calc <: Real, Out <: Real}
     gamma::DirtyMatrix{Calc}
     
     likelihood::Calc
+    dlikelihood::DirtyVector{Calc}
 
     y::Vector{Out}
 
@@ -98,6 +99,7 @@ GaussianHMM(
     DirtyMatrix{Calc}(),
         
     convert( Calc, NaN ),
+    DirtyVector{Calc}(),
         
     Vector{Out}(),
         
@@ -119,7 +121,10 @@ Base.copy( hmm::GaussianHMM ) =
         copy( hmm.beta ),
         copy( hmm.xi ),
         copy( hmm.gamma ),
+        
         hmm.likelihood,
+        copy( hmm.dlikelihood ),
+        
         copy( hmm.y ),
         copy( hmm.scratch ),
     )
@@ -173,7 +178,9 @@ function clear( hmm::GaussianHMM{Calc} ) where {Calc}
     hmm.beta.dirty = true
     hmm.xi.dirty = true
     hmm.gamma.dirty = true
+    
     hmm.likelihood = convert( Calc, NaN )
+    hmm.dlikelihood.dirty = true
 end
 
 function writearray( io::IO, v::Array{T,N} ) where {T,N}
@@ -234,6 +241,8 @@ function setobservations( hmm::GaussianHMM{Calc}, y::Vector{U} ) where {Calc, U 
     hmm.beta = DirtyArray( zeros( Calc, T, m ) )
     hmm.xi = DirtyArray( zeros( Calc, T-1, m, m ) )
     hmm.gamma = DirtyArray( zeros( Calc, T, m ) )
+
+    hmm.dlikelihood = DirtyArray( zeros( Calc, m*(m+2) ) )
     
     clear( hmm )
     hmm.y = y
@@ -348,10 +357,19 @@ end
 
 function likelihood( hmm::GaussianHMM{Calc} ) where {Calc}
     if isnan(hmm.likelihood)
-        alpha = forwardprobabilities( hmm )        
+        alpha = forwardprobabilities( hmm )
         hmm.likelihood = sum(alpha[end,:])
     end
     return hmm.likelihood
+end
+
+function dlikelihood( hmm::GaussianHMM{Calc} ) where {Calc}
+    if hmm.dlikelihood.dirty
+        dalpha = dforwardprobabilities( hmm )
+        (p,m,T) = size(dalpha)
+        hmm.dlikelihood.data[:] = reshape(sum(dalpha[:,:,end],dims=2), (p,))
+    end
+    return hmm.dlikelihood.data
 end
 
 function conditionaljointstateprobabilities( hmm::GaussianHMM{Calc,Out} ) where {Calc,Out}

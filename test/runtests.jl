@@ -51,85 +51,68 @@ HMM.setobservations( hmm4, y2 );
 
 # check derivatives; need to do this before checking statistical convergence
 # since MLE has 0 likelihood derivative
-epsilon = 1e-6
+function ddffd( hmm, parameter, f, df; delta = 1e-6, relative=relative )
+    original = parameter[1]
+    
+    parameter[1] += delta
+    HMM.clear( hmm )
+    dpos = copy( f( hmm ) )
+    parameter[1] = original
+    
+    parameter[1] -= delta
+    HMM.clear( hmm )
+    dneg = copy( f( hmm ) )
+    parameter[1] = original
+
+    fd = (dpos - dneg)/(2*delta)
+    dims = length(size(fd))
+    outtype = dims == 0 ? Float64 : Array{Float64,dims}
+    result = abs.(convert(outtype,df .- fd))
+    return relative ? result : result ./ (1 .+ convert(outtype,df))
+end
+
+function testfd( hmm, parameter, f, df; delta = 1e-6, epsilon = 1e-4, relative=false, string="" )
+    diffs = ddffd( hmm, parameter, f, df, delta=delta, relative=relative )
+    first = findfirst( abs.(diffs) .>= epsilon )
+    if first != nothing
+        location = join( Tuple(first), ", " )
+        @assert( false, "Error in $string at $location" )
+    end
+end
+
 b = copy( HMM.probability( hmm4 ) )
 (T,m) = size(b)
 db = copy( HMM.dprobability( hmm4 ) )
-
 alpha = copy( HMM.forwardprobabilities( hmm4 ) )
 dalpha = copy( HMM.dforwardprobabilities( hmm4 ) )
+dl = HMM.dlikelihood( hmm4 )
 
 for i = 1:m
     # first versus transition probabilities
     for j = 1:m
         # note the constraint to add to 1 is handled elsewhere
-        p = hmm4.transitionprobabilities[i,j]
-        
-        hmm4.transitionprobabilities[i,j] += epsilon
-        HMM.clear( hmm4 )
-        bp = copy( HMM.probability( hmm4 ) )
-        alphap = copy( HMM.forwardprobabilities( hmm4 ) )
-        hmm4.transitionprobabilities[i,j] = p
-        
-        hmm4.transitionprobabilities[i,j] -= epsilon
-        HMM.clear( hmm4 )
-        bm = copy( HMM.probability( hmm4 ) )
-        alpham = copy( HMM.forwardprobabilities( hmm4 ) )
-        hmm4.transitionprobabilities[i,j] = p
-        
-        fddb = (bp - bm)/(2*epsilon)
-        @assert( maximum(abs.(convert(Matrix{Float64},fddb - db[(i-1)*m + j,:,:]'))) < 1e-8 )
-        
-        fddalpha = (alphap - alpham)/(2*epsilon)
-        @assert( maximum(abs.(convert( Matrix{Float64}, (fddalpha - dalpha[(i-1)*m + j,:,:]')./(1 .+ fddalpha) ))) < 1e-2 )
+        parameter = view( hmm4.transitionprobabilities, i, j )
+        index = (i-1)*m + j
+        testfd( hmm4, parameter, HMM.probability, db[index,:,:]' )
+        testfd( hmm4, parameter, HMM.forwardprobabilities, dalpha[index,:,:]', epsilon=1e-2, relative=true )
+        testfd( hmm4, parameter, HMM.likelihood, dl[index], epsilon=1e-2 )
     end
     
     # now mean
-    mu = hmm4.means[i]
-    
-    hmm4.means[i] += epsilon
-    HMM.clear( hmm4 )
-    bp = copy( HMM.probability( hmm4 ) )
-    alphap = copy( HMM.forwardprobabilities( hmm4 ) )
-    hmm4.means[i] = mu
-    
-    hmm4.means[i] -= epsilon
-    HMM.clear( hmm4 )
-    bm = copy( HMM.probability( hmm4 ) )
-    alpham = copy( HMM.forwardprobabilities( hmm4 ) )
-    hmm4.means[i] = mu
-
-    fddb = (bp - bm)/(2*epsilon)
-    @assert( maximum(abs.(convert(Matrix{Float64},fddb - db[m^2 + i,:,:]'))) < 1e-4,
-             "Mismatch for b for mean $i" )
-
-    fddalpha = (alphap - alpham)/(2*epsilon)
-    @assert( maximum(abs.(convert(Matrix{Float64},(fddalpha - dalpha[m^2 + i,:,:]')./(1 .+ fddalpha)))) < 1e-4,
-             "Mismatch for alpha for mean $i" )
-    findall(abs.(convert(Matrix{Float64},(fddalpha - dalpha[m^2 + i,:,:]')./(1 .+ fddalpha))) .> 1e-3)
+    parameter = view( hmm4.means, i )
+    index = m^2 + i
+    s = "mean $i"
+    testfd( hmm4, parameter, HMM.probability, db[index,:,:]', string=s )
+    testfd( hmm4, parameter, HMM.forwardprobabilities, dalpha[index,:,:]', epsilon=1e-3, relative=true, string=s )
+    testfd( hmm4, parameter, HMM.likelihood, dl[index], epsilon=1e-3, string=s )
     
     # now standard deviation
-    sigma = hmm4.stds[i]
-    
-    hmm4.stds[i] += epsilon
-    HMM.clear( hmm4 )
-    bp = copy( HMM.probability( hmm4 ) )
-    alphap = copy( HMM.forwardprobabilities( hmm4 ) )
-    hmm4.stds[i] = sigma
-    
-    hmm4.stds[i] -= epsilon
-    HMM.clear( hmm4 )
-    bm = copy( HMM.probability( hmm4 ) )
-    alpham = copy( HMM.forwardprobabilities( hmm4 ) )
-    hmm4.stds[i] = sigma
-    
-    fddb = (bp - bm)/(2*epsilon)
-    @assert( maximum(abs.(convert(Matrix{Float64},fddb - db[m*(m+1) + i,:,:]'))) < 1e-4,
-             "Mismatch for b for std $i" )
-
-    fddalpha = (alphap - alpham)/(2*epsilon)
-    @assert( maximum(abs.(convert(Matrix{Float64},(fddalpha - dalpha[m*(m+1) + i,:,:]')./(1 .+ fddalpha)))) < 1e-3,
-             "Mismatch for alpha for std $i" )
+    parameter = view( hmm4.stds, i )
+    index = m*(m+1) + i
+    s = "mean $i"
+    testfd( hmm4, parameter, HMM.probability, db[index,:,:]', string=s )
+    testfd( hmm4, parameter, HMM.forwardprobabilities, dalpha[index,:,:]', epsilon=1e-3, relative=true, string=s )
+    testfd( hmm4, parameter, HMM.likelihood, dl[index], epsilon=1e-3, string=s )
 end
 
 @time HMM.em( hmm4, debug=2 )
