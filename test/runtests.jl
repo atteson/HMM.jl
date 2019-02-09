@@ -109,7 +109,7 @@ for i = 1:m
     # now standard deviation
     parameter = view( hmm4.stds, i )
     index = m*(m+1) + i
-    s = "mean $i"
+    s = "std $i"
     testfd( hmm4, parameter, HMM.probability, db[index,:,:]', string=s )
     testfd( hmm4, parameter, HMM.forwardprobabilities, dalpha[index,:,:]', epsilon=1e-3, relative=true, string=s )
     testfd( hmm4, parameter, HMM.likelihood, dl[index], epsilon=1e-3, string=s )

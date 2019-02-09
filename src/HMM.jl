@@ -278,6 +278,7 @@ function dprobability( hmm::GaussianHMM )
                 end
             end
         end
+        hmm.db.dirty = false
     end
     return hmm.db.data
 end
@@ -315,6 +316,7 @@ function dforwardprobabilities( hmm::GaussianHMM{Calc,Out} ) where {Calc,Out}
         (T,m) = size(hmm.alpha.data)
         b = probability( hmm )
         db = dprobability( hmm )
+        alpha = forwardprobabilities( hmm )
 
         hmm.dalpha.data[:,:,1] = hmm.initialprobabilities' .* db[:,:,1]
         hmm.dalpha.data[:,:,2:T] = zeros( m*(m+2), m, T-1 )
@@ -324,14 +326,14 @@ function dforwardprobabilities( hmm::GaussianHMM{Calc,Out} ) where {Calc,Out}
                 to = hmm.graph.to[j]
                 
                 paramindex = (from-1)*m + to
-                hmm.dalpha.data[paramindex,to,i] += hmm.alpha.data[i-1,from] * b[i,to]
+                hmm.dalpha.data[paramindex,to,i] += alpha[i-1,from] * b[i,to]
                 
                 hmm.dalpha.data[:,to,i] += hmm.transitionprobabilities[from, to] * hmm.dalpha.data[:,from,i-1] * b[i,to]
                 
-                hmm.dalpha.data[:,to,i] += hmm.transitionprobabilities[from, to] * hmm.alpha.data[i-1,from] * db[:,to,i]
+                hmm.dalpha.data[:,to,i] += hmm.transitionprobabilities[from, to] * alpha[i-1,from] * db[:,to,i]
             end
         end
-        hmm.alpha.dirty = false
+        hmm.dalpha.dirty = false
     end
     return hmm.dalpha.data
 end
@@ -368,6 +370,8 @@ function dlikelihood( hmm::GaussianHMM{Calc} ) where {Calc}
         dalpha = dforwardprobabilities( hmm )
         (p,m,T) = size(dalpha)
         hmm.dlikelihood.data[:] = reshape(sum(dalpha[:,:,end],dims=2), (p,))
+        
+        hmm.dlikelihood.dirty = false
     end
     return hmm.dlikelihood.data
 end
