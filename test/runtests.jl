@@ -33,7 +33,7 @@ xi = HMM.conditionaljointstateprobabilities( hmm1 );
 @assert( maximum(abs.([maximum(abs.(sum(xi[i,:,:],dims=1)' - gamma[i+1,:])) for i in 1:T-1])) < 1e-8 )
 
 hmm2 = copy( hmm1 );
-HMM.emstep( hmm1, hmm2 )
+@time HMM.emstep( hmm1, hmm2 )
 @assert( maximum(abs.( sum(hmm2.transitionprobabilities,dims=2) .- 1 )) < 1e-8 )
 
 hmm3 = HMM.randomhmm( hmm1.graph, calc=BigFloat, seed=2 )
@@ -51,7 +51,7 @@ HMM.setobservations( hmm4, y2 );
 
 # check derivatives; need to do this before checking statistical convergence
 # since MLE has 0 likelihood derivative
-function ddffd( hmm, parameter, f, df; delta = 1e-6, relative=relative )
+function ddffd( hmm, parameter, f, df; delta = 1e-6, relative=false )
     original = parameter[1]
     
     parameter[1] += delta
@@ -82,18 +82,19 @@ end
 
 b = copy( HMM.probability( hmm4 ) )
 (T,m) = size(b)
-db = copy( HMM.dprobability( hmm4 ) )
+dlogb = copy( HMM.dlogprobability( hmm4 ) )
 alpha = copy( HMM.forwardprobabilities( hmm4 ) )
 dalpha = copy( HMM.dforwardprobabilities( hmm4 ) )
 dl = HMM.dlikelihood( hmm4 )
 
 for i = 1:m
+    f = m -> log.(HMM.probability(m))
     # first versus transition probabilities
     for j = 1:m
         # note the constraint to add to 1 is handled elsewhere
         parameter = view( hmm4.transitionprobabilities, i, j )
         index = (i-1)*m + j
-        testfd( hmm4, parameter, HMM.probability, db[index,:,:]' )
+        testfd( hmm4, parameter, f, dlogb[index,:,:]' )
         testfd( hmm4, parameter, HMM.forwardprobabilities, dalpha[index,:,:]', epsilon=1e-2, relative=true )
         testfd( hmm4, parameter, HMM.likelihood, dl[index], epsilon=1e-2 )
     end
@@ -102,7 +103,7 @@ for i = 1:m
     parameter = view( hmm4.means, i )
     index = m^2 + i
     s = "mean $i"
-    testfd( hmm4, parameter, HMM.probability, db[index,:,:]', string=s )
+    testfd( hmm4, parameter, f, dlogb[index,:,:]', string=s )
     testfd( hmm4, parameter, HMM.forwardprobabilities, dalpha[index,:,:]', epsilon=1e-3, relative=true, string=s )
     testfd( hmm4, parameter, HMM.likelihood, dl[index], epsilon=1e-3, string=s )
     
@@ -110,7 +111,7 @@ for i = 1:m
     parameter = view( hmm4.stds, i )
     index = m*(m+1) + i
     s = "std $i"
-    testfd( hmm4, parameter, HMM.probability, db[index,:,:]', string=s )
+    testfd( hmm4, parameter, f, dlogb[index,:,:]', string=s )
     testfd( hmm4, parameter, HMM.forwardprobabilities, dalpha[index,:,:]', epsilon=1e-3, relative=true, string=s )
     testfd( hmm4, parameter, HMM.likelihood, dl[index], epsilon=1e-3, string=s )
 end
