@@ -297,14 +297,23 @@ end
 function d2logprobability( hmm::GaussianHMM )
     if hmm.d2logb.dirty
         dlogb = dlogprobability( hmm )
+        (p,m,T) = size(dlogb)
         y = observations( hmm )
         for i = 1:m
             for t = 1:T
                 mu = hmm.means[i]
                 sigma = hmm.stds[i]
                 z = (y[t] - mu)/sigma
-                hmm.d2logb.data[m^2+i,m^2+i,i,t] = z/sigma
-                hmm.d2logb.data[m^2+i,m*(m+1)+i,i,t] = -2*z/sigma^2
+
+                mui = m^2+i
+                hmm.d2logb.data[mui,mui,i,t] = -1/sigma^2
+
+                sigmai = m*(m+1)+i
+                dmusigma = -2*z/sigma^2
+                hmm.d2logb.data[mui,sigmai,i,t] = dmusigma
+                hmm.d2logb.data[sigmai,mui,i,t] = dmusigma
+
+                hmm.d2logb.data[sigmai,sigmai,i,t] = (1 - 3z^2)/sigma^2
             end
         end
         hmm.d2logb.dirty = false
