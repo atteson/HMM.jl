@@ -90,6 +90,7 @@ alpha = copy( HMM.forwardprobabilities( hmm4 ) );
 dalpha = copy( HMM.dforwardprobabilities( hmm4 ) );
 d2alpha = copy( HMM.d2forwardprobabilities( hmm4 ) );
 dl = HMM.dlikelihood( hmm4 )
+d2l = HMM.d2likelihood( hmm4 )
 
 f1 = m -> log.(HMM.probabilities(m))
 f2 = m -> permutedims(HMM.probabilities(m) .* permutedims(HMM.dlogprobabilities(m),[3,2,1]), [3,2,1])
@@ -108,7 +109,9 @@ for i = 1:m
         
         testfd( hmm4, parameter, HMM.forwardprobabilities, dalpha[index1,:,:]', epsilon=1e-2, relative=true, string=s )
         testfd( hmm4, parameter, HMM.dforwardprobabilities, d2alpha[index1,:,:,:], epsilon=1e-2, relative=true, string=s )
+        
         testfd( hmm4, parameter, HMM.likelihood, dl[index1], epsilon=1e-2, string=s )
+        testfd( hmm4, parameter, HMM.dlikelihood, d2l[index1,:], epsilon=1e-2, string=s )
     end
     
     # now mean
@@ -123,7 +126,9 @@ for i = 1:m
     
     testfd( hmm4, parameter, HMM.forwardprobabilities, dalpha[index1,:,:]', epsilon=1e-3, relative=true, string=s )
     testfd( hmm4, parameter, HMM.dforwardprobabilities, d2alpha[index1,:,:,:], epsilon=1e-2, relative=true, string=s )
+    
     testfd( hmm4, parameter, HMM.likelihood, dl[index1], epsilon=1e-3, string=s )
+    testfd( hmm4, parameter, HMM.dlikelihood, d2l[index1,:], epsilon=1e-2, string=s )
     
     # now standard deviation
     parameter = view( hmm4.stds, i )
@@ -137,7 +142,9 @@ for i = 1:m
     
     testfd( hmm4, parameter, HMM.forwardprobabilities, dalpha[index1,:,:]', epsilon=1e-3, relative=true, string=s )
     testfd( hmm4, parameter, HMM.dforwardprobabilities, d2alpha[index1,:,:,:], epsilon=1e-2, relative=true, string=s )
+    
     testfd( hmm4, parameter, HMM.likelihood, dl[index1], epsilon=1e-3, string=s )
+    testfd( hmm4, parameter, HMM.dlikelihood, d2l[index1,:], epsilon=1e-2, string=s )
 end
 
 @time HMM.em( hmm4, debug=2 )

@@ -478,6 +478,17 @@ function dlikelihood( hmm::GaussianHMM{Calc} ) where {Calc}
     return hmm.dlikelihood.data
 end
 
+function d2likelihood( hmm::GaussianHMM{Calc} ) where {Calc}
+    if hmm.d2likelihood.dirty
+        d2alpha = d2forwardprobabilities( hmm )
+        (p,p,m,T) = size(d2alpha)
+        hmm.d2likelihood.data[:] = reshape(sum(d2alpha[:,:,:,end],dims=3), (p,p))
+        
+        hmm.d2likelihood.dirty = false
+    end
+    return hmm.d2likelihood.data
+end
+
 function conditionaljointstateprobabilities( hmm::GaussianHMM{Calc,Out} ) where {Calc,Out}
     if hmm.xi.dirty
         alpha = forwardprobabilities( hmm )
