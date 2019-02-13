@@ -54,7 +54,7 @@ end
 
 function MathProgBase.eval_f( opt::HMMOptimizer{Brob,Float64}, x )
     setparameters!( opt, x )
-    return convert( Float64, HMM.loglikelihood( opt.hmm ) )
+    return HMM.likelihood( opt.hmm ).log
 end
     
 function MathProgBase.eval_g( opt::HMMOptimizer{Calc,Out}, g, x ) where {Calc,Out}
@@ -64,8 +64,9 @@ end
 
 function MathProgBase.eval_grad_f( opt::HMMOptimizer{Brob,Float64}, grad_f, x )
     setparameters!( opt, x )
-    dlogl = HMM.dloglikelihood( opt.hmm )
-    grad_f[:] = dlogl
+    l = HMM.likelihood( opt.hmm )
+    dl = HMM.dlikelihood( opt.hmm )
+    grad_f[:] = dl ./ l
 end
 
 function MathProgBase.jac_structure( opt::HMMOptimizer{Calc,Out} ) where {Calc,Out}
@@ -125,8 +126,8 @@ for i = 1:length(parameters)
     fm = MathProgBase.eval_f( opt, parameters )
     parameters[i] += delta
 
-    fd = (fp - fm)/(2*delta)
-    push!( errors, abs(fd / grad_f[i] - 1) )
+    fd = (Brob(true,fp) - Brob(true,fm))/(2*delta)
+    push!( errors, abs(fd.log / grad_f[i] - 1) )
     @assert( errors[end] < 1e-4, "mismatch at derivative $i" )
 end
 
@@ -135,16 +136,16 @@ end
 MathProgBase.setwarmstart!( model, parameters )
 MathProgBase.optimize!(model)
 
-HMM.loglikelihood( opt.hmm )
+HMM.likelihood( opt.hmm )
 
 emhmm = HMM.randomhmm( graph, calc=Brob, seed=2 )
 HMM.setobservations( emhmm, y );
 HMM.em( emhmm, debug=2 )
-HMM.loglikelihood( opt.hmm )
-HMM.loglikelihood( emhmm )
+HMM.likelihood( opt.hmm )
+HMM.likelihood( emhmm )
 
 HMM.em( opt.hmm, debug=2 )
-HMM.loglikelihood( opt.hmm )
+HMM.likelihood( opt.hmm )
 
 getparameters!( opt, parameters )
 MathProgBase.eval_f( opt, parameters )
