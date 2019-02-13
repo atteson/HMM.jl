@@ -67,8 +67,9 @@ function ddffd( hmm, parameter, f, df; delta = 1e-6, relative=false )
     fd = (dpos - dneg)/(2*delta)
     dims = length(size(fd))
     outtype = dims == 0 ? Float64 : Array{Float64,dims}
-    result = abs.(convert(outtype,df .- fd))
-    return relative ? result : result ./ (1 .+ convert(outtype,df))
+    result = convert(outtype,df .- fd)
+    result = abs.(relative ? result : result ./ (1 .+ convert(outtype,df)))
+    return result
 end
 
 function testfd( hmm, parameter, f, df; delta = 1e-6, epsilon = 1e-4, relative=false, string="" )
@@ -80,27 +81,31 @@ function testfd( hmm, parameter, f, df; delta = 1e-6, epsilon = 1e-4, relative=f
     end
 end
 
-b = copy( HMM.probabilities( hmm4 ) )
+b = copy( HMM.probabilities( hmm4 ) );
 (T,m) = size(b)
-dlogb = copy( HMM.dlogprobabilities( hmm4 ) )
-d2logb = copy( HMM.d2logprobabilities( hmm4 ) )
-alpha = copy( HMM.forwardprobabilities( hmm4 ) )
-dalpha = copy( HMM.dforwardprobabilities( hmm4 ) )
+dlogb = copy( HMM.dlogprobabilities( hmm4 ) );
+d2logb = copy( HMM.d2logprobabilities( hmm4 ) );
+d2b = copy( HMM.d2probabilities( hmm4 ) );
+alpha = copy( HMM.forwardprobabilities( hmm4 ) );
+dalpha = copy( HMM.dforwardprobabilities( hmm4 ) );
 dl = HMM.dlikelihood( hmm4 )
 
+f1 = m -> log.(HMM.probabilities(m))
+f2 = m -> permutedims(HMM.probabilities(m) .* permutedims(HMM.dlogprobabilities(m),[3,2,1]), [3,2,1])
 for i = 1:m
-    f1 = m -> log.(HMM.probabilities(m))
     # first versus transition probabilities
     for j = 1:m
         # note the constraint to add to 1 is handled elsewhere
         parameter = view( hmm4.transitionprobabilities, i, j )
         index1 = (i-1)*m + j
+p
+        s = "transition probability ($i,$j)"
+        testfd( hmm4, parameter, f1, dlogb[index1,:,:]', string=s )
+        testfd( hmm4, parameter, HMM.dlogprobabilities, d2logb[index1,:,:,:], string=s )
+        testfd( hmm4, parameter, f2, d2b[index1,:,:,:], string=s )
         
-        testfd( hmm4, parameter, f1, dlogb[index1,:,:]' )
-        testfd( hmm4, parameter, HMM.dlogprobabilities, d2logb[index1,:,:,:] )
-        
-        testfd( hmm4, parameter, HMM.forwardprobabilities, dalpha[index1,:,:]', epsilon=1e-2, relative=true )
-        testfd( hmm4, parameter, HMM.likelihood, dl[index1], epsilon=1e-2 )
+        testfd( hmm4, parameter, HMM.forwardprobabilities, dalpha[index1,:,:]', epsilon=1e-2, relative=true, string=s )
+        testfd( hmm4, parameter, HMM.likelihood, dl[index1], epsilon=1e-2, string=s )
     end
     
     # now mean
@@ -110,6 +115,7 @@ for i = 1:m
     
     testfd( hmm4, parameter, f1, dlogb[index1,:,:]', string=s )
     testfd( hmm4, parameter, HMM.dlogprobabilities, d2logb[index1,:,:,:], string=s )
+    testfd( hmm4, parameter, f2, d2b[index1,:,:,:], string=s )
     
     testfd( hmm4, parameter, HMM.forwardprobabilities, dalpha[index1,:,:]', epsilon=1e-3, relative=true, string=s )
     testfd( hmm4, parameter, HMM.likelihood, dl[index1], epsilon=1e-3, string=s )
@@ -121,6 +127,7 @@ for i = 1:m
     
     testfd( hmm4, parameter, f1, dlogb[index1,:,:]', string=s )
     testfd( hmm4, parameter, HMM.dlogprobabilities, d2logb[index1,:,:,:], string=s )
+    testfd( hmm4, parameter, f2, d2b[index1,:,:,:], string=s )
     
     testfd( hmm4, parameter, HMM.forwardprobabilities, dalpha[index1,:,:]', epsilon=1e-3, relative=true, string=s )
     testfd( hmm4, parameter, HMM.likelihood, dl[index1], epsilon=1e-3, string=s )

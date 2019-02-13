@@ -59,6 +59,7 @@ mutable struct GaussianHMM{Calc <: Real, Out <: Real}
     b::DirtyMatrix{Calc}
     dlogb::DirtyArray{Array{Calc,3}}
     d2logb::DirtyArray{Array{Calc,4}}
+    d2b::DirtyArray{Array{Calc,4}}
     
     alpha::DirtyMatrix{Calc}
     dalpha::DirtyArray{Array{Calc,3}}
@@ -92,6 +93,7 @@ GaussianHMM(
     DirtyMatrix{Calc}(),
     DirtyArray{Array{Calc,3}}(),
     DirtyArray{Array{Calc,4}}(),
+    DirtyArray{Array{Calc,4}}(),
         
     DirtyMatrix{Calc}(),
     DirtyArray{Array{Calc,3}}(),
@@ -121,6 +123,7 @@ Base.copy( hmm::GaussianHMM ) =
         copy( hmm.b ),
         copy( hmm.dlogb ),
         copy( hmm.d2logb ),
+        copy( hmm.d2b ),
         
         copy( hmm.alpha ),
         copy( hmm.dalpha ),
@@ -181,6 +184,7 @@ function clear( hmm::GaussianHMM{Calc} ) where {Calc}
     hmm.b.dirty = true
     hmm.dlogb.dirty = true
     hmm.d2logb.dirty = true
+    hmm.d2b.dirty = true
     
     hmm.alpha.dirty = true
     hmm.dalpha.dirty = true
@@ -247,6 +251,7 @@ function setobservations( hmm::GaussianHMM{Calc}, y::Vector{U} ) where {Calc, U 
     hmm.b = DirtyArray( zeros( Calc, T, m ) )
     hmm.dlogb = DirtyArray( zeros( Calc, m*(m+2), m, T ) )
     hmm.d2logb = DirtyArray( zeros( Calc, m*(m+2), m*(m+2), m, T ) )
+    hmm.d2b = DirtyArray( zeros( Calc, m*(m+2), m*(m+2), m, T ) )
     
     hmm.alpha = DirtyArray( zeros( Calc, T, m ) )
     hmm.dalpha = DirtyArray( zeros( Calc, m*(m+2), m, T ) )
@@ -321,6 +326,23 @@ function d2logprobabilities( hmm::GaussianHMM )
     return hmm.d2logb.data
 end
 
+function d2probabilities( hmm::GaussianHMM )
+    if hmm.d2b.dirty
+        b = probabilities( hmm )
+        dlogb = dlogprobabilities( hmm )
+        d2logb = d2logprobabilities( hmm )
+        (p,m,T) = size(dlogb)
+        for i = 1:m
+            for t = 1:T
+                hmm.d2b.data[:,:,i,t] = b[t,i] .* (d2logb[:,:,i,t] + dlogb[:,i,t] * dlogb[:,i,t]')
+            end
+        end
+
+        hmm.d2b.dirty = false
+    end
+    return hmm.d2b.data
+end
+
 function stationary( hmm::GaussianHMM )
     P = Matrix{Float64}( hmm.transitionprobabilities )
     N = length(hmm.initialprobabilities)
@@ -378,6 +400,35 @@ end
 
 function d2forwardprobabilities( hmm::GaussianHMM{Calc,Out} ) where {Calc,Out}
     if hmm.d2apha.dirty
+        b = probabilities( hmm )
+        dlogb = dlogprobabilities( hmm )
+        d2b = d2probabilities( hmm )
+        
+        alpha = forwardprobabilities( hmm )
+        dalpha = dforwardprobabilities( hmm )
+
+        d2alpha[:,:,:,1] = d2logb[:,:,:,1]
+        d2alpha[:,:,:,2:T] = zeros( m*(m+2), m*(m+2), m, T-1 )
+        for i = 2:T
+            for j = 1:length(hmm.graph.from)
+                from = hmm.graph.from[j]
+                to = hmm.graph.to[j]
+                paramindex = (from-1)*m + to
+                
+                d2alpha[:,:,to,i] += hmm.transitionprobabilities[from,to] * d2alpha[:,:,from,i-1] * b[i,to]
+
+                d2alpha[paramindex,:,to,i] += dalpha[:,from,i-1] * b[i,to]
+                d2alpha[:,paramindex,to,i] += dalpha[:,from,i-1] * b[i,to]
+
+                d2alpha[paramindex,:,to,i] += alpha[from,i-1] * (dlogb[:,to,i] .* b[i,to])
+                d2alpha[:,paramindex,to,i] += alpha[from,i-1] * (dlogb[:,to,i] .* b[i,to])
+
+                d2alpha[:,:,to,i] += dalpha[:,to,i] * (dlogb[:,to,i]' .* b[i,to]) * hmm.transitionprobabilities[from,to]
+                d2alpha[:,:,to,i] += (dlogb[:,to,i] .* b[i,to]) * dalpha[:,to,i]' * hmm.transitionprobabilities[from,to]
+
+                d2alpha[:,:,to,i] += alpha[from,i-1] * hmm.transitionprobabilities[from,to] * d2b[:,:,to,i]
+            end
+        end
         hmm.d2alpha.dirty = false
     end
     return hmm.d2alpha.data
