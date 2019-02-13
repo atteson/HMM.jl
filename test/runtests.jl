@@ -88,6 +88,7 @@ d2logb = copy( HMM.d2logprobabilities( hmm4 ) );
 d2b = copy( HMM.d2probabilities( hmm4 ) );
 alpha = copy( HMM.forwardprobabilities( hmm4 ) );
 dalpha = copy( HMM.dforwardprobabilities( hmm4 ) );
+d2alpha = copy( HMM.d2forwardprobabilities( hmm4 ) );
 dl = HMM.dlikelihood( hmm4 )
 
 f1 = m -> log.(HMM.probabilities(m))
@@ -98,13 +99,15 @@ for i = 1:m
         # note the constraint to add to 1 is handled elsewhere
         parameter = view( hmm4.transitionprobabilities, i, j )
         index1 = (i-1)*m + j
-p
         s = "transition probability ($i,$j)"
+        println( "Testing $s" )
+        
         testfd( hmm4, parameter, f1, dlogb[index1,:,:]', string=s )
         testfd( hmm4, parameter, HMM.dlogprobabilities, d2logb[index1,:,:,:], string=s )
         testfd( hmm4, parameter, f2, d2b[index1,:,:,:], string=s )
         
         testfd( hmm4, parameter, HMM.forwardprobabilities, dalpha[index1,:,:]', epsilon=1e-2, relative=true, string=s )
+        testfd( hmm4, parameter, HMM.dforwardprobabilities, d2alpha[index1,:,:,:], epsilon=1e-2, relative=true, string=s )
         testfd( hmm4, parameter, HMM.likelihood, dl[index1], epsilon=1e-2, string=s )
     end
     
@@ -112,24 +115,28 @@ p
     parameter = view( hmm4.means, i )
     index1 = m^2 + i
     s = "mean $i"
+    println( "Testing $s" )
     
     testfd( hmm4, parameter, f1, dlogb[index1,:,:]', string=s )
     testfd( hmm4, parameter, HMM.dlogprobabilities, d2logb[index1,:,:,:], string=s )
     testfd( hmm4, parameter, f2, d2b[index1,:,:,:], string=s )
     
     testfd( hmm4, parameter, HMM.forwardprobabilities, dalpha[index1,:,:]', epsilon=1e-3, relative=true, string=s )
+    testfd( hmm4, parameter, HMM.dforwardprobabilities, d2alpha[index1,:,:,:], epsilon=1e-2, relative=true, string=s )
     testfd( hmm4, parameter, HMM.likelihood, dl[index1], epsilon=1e-3, string=s )
     
     # now standard deviation
     parameter = view( hmm4.stds, i )
     index1 = m*(m+1) + i
     s = "std $i"
+    println( "Testing $s" )
     
     testfd( hmm4, parameter, f1, dlogb[index1,:,:]', string=s )
     testfd( hmm4, parameter, HMM.dlogprobabilities, d2logb[index1,:,:,:], string=s )
     testfd( hmm4, parameter, f2, d2b[index1,:,:,:], string=s )
     
     testfd( hmm4, parameter, HMM.forwardprobabilities, dalpha[index1,:,:]', epsilon=1e-3, relative=true, string=s )
+    testfd( hmm4, parameter, HMM.dforwardprobabilities, d2alpha[index1,:,:,:], epsilon=1e-2, relative=true, string=s )
     testfd( hmm4, parameter, HMM.likelihood, dl[index1], epsilon=1e-3, string=s )
 end
 

@@ -399,7 +399,7 @@ function dforwardprobabilities( hmm::GaussianHMM{Calc,Out} ) where {Calc,Out}
 end
 
 function d2forwardprobabilities( hmm::GaussianHMM{Calc,Out} ) where {Calc,Out}
-    if hmm.d2apha.dirty
+    if hmm.d2alpha.dirty
         b = probabilities( hmm )
         dlogb = dlogprobabilities( hmm )
         d2b = d2probabilities( hmm )
@@ -407,26 +407,32 @@ function d2forwardprobabilities( hmm::GaussianHMM{Calc,Out} ) where {Calc,Out}
         alpha = forwardprobabilities( hmm )
         dalpha = dforwardprobabilities( hmm )
 
-        d2alpha[:,:,:,1] = d2logb[:,:,:,1]
-        d2alpha[:,:,:,2:T] = zeros( m*(m+2), m*(m+2), m, T-1 )
+        (p,m,T) = size(dlogb)
+
+        for i = 1:m
+            hmm.d2alpha.data[:,:,i,1] = hmm.initialprobabilities[i] .* d2b[:,:,i,1]
+        end
+        hmm.d2alpha.data[:,:,:,2:T] = zeros( m*(m+2), m*(m+2), m, T-1 )
         for i = 2:T
             for j = 1:length(hmm.graph.from)
                 from = hmm.graph.from[j]
                 to = hmm.graph.to[j]
                 paramindex = (from-1)*m + to
                 
-                d2alpha[:,:,to,i] += hmm.transitionprobabilities[from,to] * d2alpha[:,:,from,i-1] * b[i,to]
+                hmm.d2alpha.data[:,:,to,i] += hmm.transitionprobabilities[from,to] * hmm.d2alpha.data[:,:,from,i-1] * b[i,to]
 
-                d2alpha[paramindex,:,to,i] += dalpha[:,from,i-1] * b[i,to]
-                d2alpha[:,paramindex,to,i] += dalpha[:,from,i-1] * b[i,to]
+                hmm.d2alpha.data[paramindex,:,to,i] += dalpha[:,from,i-1] * b[i,to]
+                hmm.d2alpha.data[:,paramindex,to,i] += dalpha[:,from,i-1] * b[i,to]
 
-                d2alpha[paramindex,:,to,i] += alpha[from,i-1] * (dlogb[:,to,i] .* b[i,to])
-                d2alpha[:,paramindex,to,i] += alpha[from,i-1] * (dlogb[:,to,i] .* b[i,to])
+                hmm.d2alpha.data[paramindex,:,to,i] += alpha[i-1,from] * (dlogb[:,to,i] .* b[i,to])
+                hmm.d2alpha.data[:,paramindex,to,i] += alpha[i-1,from] * (dlogb[:,to,i] .* b[i,to])
 
-                d2alpha[:,:,to,i] += dalpha[:,to,i] * (dlogb[:,to,i]' .* b[i,to]) * hmm.transitionprobabilities[from,to]
-                d2alpha[:,:,to,i] += (dlogb[:,to,i] .* b[i,to]) * dalpha[:,to,i]' * hmm.transitionprobabilities[from,to]
+                hmm.d2alpha.data[:,:,to,i] +=
+                    dalpha[:,to,i] * (dlogb[:,to,i]' .* b[i,to]) * hmm.transitionprobabilities[from,to]
+                hmm.d2alpha.data[:,:,to,i] +=
+                    (dlogb[:,to,i] .* b[i,to]) * dalpha[:,to,i]' * hmm.transitionprobabilities[from,to]
 
-                d2alpha[:,:,to,i] += alpha[from,i-1] * hmm.transitionprobabilities[from,to] * d2b[:,:,to,i]
+                hmm.d2alpha.data[:,:,to,i] += alpha[i-1,from] * hmm.transitionprobabilities[from,to] * d2b[:,:,to,i]
             end
         end
         hmm.d2alpha.dirty = false
