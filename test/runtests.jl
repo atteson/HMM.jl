@@ -69,12 +69,13 @@ function ddffd( hmm, parameter, f, df; delta = 1e-6, relative=false )
     return result
 end
 
-function testfd( hmm, parameter, f, df; delta = 1e-6, epsilon = 1e-4, relative=false, string="" )
+function testfd( hmm, parameter, f, df; delta = 1e-6, epsilon = 1e-4, relative=false )
     diffs = ddffd( hmm, parameter, f, df, delta=delta, relative=relative )
-    first = findfirst( abs.(diffs) .>= epsilon )
-    if first != nothing
-        location = join( Tuple(first), ", " )
-        @assert( false, "Error in $string at $location (difference of $(abs.(diffs[first])))" )
+    (max, index) = findmax( diffs )
+    location = join( Tuple(index), ", " )
+    println( "Max is $max (out of $epsilon) at $location" )
+    if max >= epsilon
+        @assert( false )
     end
 end
 
@@ -97,60 +98,41 @@ d2logl = copy( HMM.d2loglikelihood( hmm4 ) );
 f1 = m -> log.(HMM.probabilities(m))
 f2 = m -> permutedims(HMM.probabilities(m) .* permutedims(HMM.dlogprobabilities(m),[3,2,1]), [3,2,1])
 f3 = m -> HMM.dlikelihood(m)./HMM.likelihood(m)
-for i = 1:m
-    # first versus transition probabilities
-    for j = 1:m
-        # note the constraint to add to 1 is handled elsewhere
+# note the constraint to add to 1 is handled elsewhere
+for index in 1:m*(m+2)
+    if index <= m^2
+        (i,j) = divrem(index - 1, m) .+ (1,1)
+
         parameter = view( hmm4.transitionprobabilities, i, j )
-        index1 = (i-1)*m + j
-        s = "transition probability ($i,$j)"
-        println( "Testing $s" )
-        
-        testfd( hmm4, parameter, f1, dlogb[index1,:,:]', string=s )
-        testfd( hmm4, parameter, HMM.dlogprobabilities, d2logb[index1,:,:,:], string=s )
-        testfd( hmm4, parameter, f2, d2b[index1,:,:,:], string=s )
-        
-        testfd( hmm4, parameter, HMM.forwardprobabilities, dalpha[index1,:,:]', epsilon=1e-2, relative=true, string=s )
-        testfd( hmm4, parameter, HMM.dforwardprobabilities, d2alpha[index1,:,:,:], epsilon=1e-2, relative=true, string=s )
-        
-        testfd( hmm4, parameter, HMM.likelihood, dl[index1], epsilon=1e-2, string=s )
-        testfd( hmm4, parameter, HMM.dlikelihood, d2l[index1,:], epsilon=1e-2, string=s )
-        testfd( hmm4, parameter, f3, d2logl[index1,:], epsilon=1e-2, relative=true, string=s )
+        println( "\n\nTesting transition probability ($i,$j)" )
+    elseif index <= m*(m+1)
+        i = index - m^2
+        parameter = view( hmm4.means, i )
+        println( "\n\nTesting mean $i" )
+    else
+        i = index - m*(m+1)
+        parameter = view( hmm4.stds, i )
+        println( "\n\nTesting std $i" )
     end
-    
-    # now mean
-    parameter = view( hmm4.means, i )
-    index1 = m^2 + i
-    s = "mean $i"
-    println( "Testing $s" )
-    
-    testfd( hmm4, parameter, f1, dlogb[index1,:,:]', string=s )
-    testfd( hmm4, parameter, HMM.dlogprobabilities, d2logb[index1,:,:,:], string=s )
-    testfd( hmm4, parameter, f2, d2b[index1,:,:,:], string=s )
-    
-    testfd( hmm4, parameter, HMM.forwardprobabilities, dalpha[index1,:,:]', epsilon=1e-3, relative=true, string=s )
-    testfd( hmm4, parameter, HMM.dforwardprobabilities, d2alpha[index1,:,:,:], epsilon=1e-2, relative=true, string=s )
-    
-    testfd( hmm4, parameter, HMM.likelihood, dl[index1], epsilon=1e-3, string=s )
-    testfd( hmm4, parameter, HMM.dlikelihood, d2l[index1,:], epsilon=1e-2, string=s )
-    testfd( hmm4, parameter, f3, d2logl[index1,:], relative=true, epsilon=1e-2, string=s )
-    
-    # now standard deviation
-    parameter = view( hmm4.stds, i )
-    index1 = m*(m+1) + i
-    s = "std $i"
-    println( "Testing $s" )
-    
-    testfd( hmm4, parameter, f1, dlogb[index1,:,:]', string=s )
-    testfd( hmm4, parameter, HMM.dlogprobabilities, d2logb[index1,:,:,:], string=s )
-    testfd( hmm4, parameter, f2, d2b[index1,:,:,:], string=s )
-    
-    testfd( hmm4, parameter, HMM.forwardprobabilities, dalpha[index1,:,:]', epsilon=1e-3, relative=true, string=s )
-    testfd( hmm4, parameter, HMM.dforwardprobabilities, d2alpha[index1,:,:,:], epsilon=1e-2, relative=true, string=s )
-    
-    testfd( hmm4, parameter, HMM.likelihood, dl[index1], epsilon=1e-3, string=s )
-    testfd( hmm4, parameter, HMM.dlikelihood, d2l[index1,:], epsilon=1e-2, string=s )
-    testfd( hmm4, parameter, f3, d2logl[index1,:], relative=true, epsilon=1e-2, string=s )
+
+    print( "dlogb: " )
+    testfd( hmm4, parameter, f1, dlogb[index,:,:]' )
+    print( "d2logb: " )
+    testfd( hmm4, parameter, HMM.dlogprobabilities, d2logb[index,:,:,:] )
+    print( "d2b: " )
+    testfd( hmm4, parameter, f2, d2b[index,:,:,:] )
+        
+    print( "dalpha: " )
+    testfd( hmm4, parameter, HMM.forwardprobabilities, dalpha[index,:,:]', epsilon=1e-2, relative=true )
+    print( "d2alpha: " )
+    testfd( hmm4, parameter, HMM.dforwardprobabilities, d2alpha[index,:,:,:], epsilon=1e-2, relative=true )
+
+    print( "dl: " )
+    testfd( hmm4, parameter, HMM.likelihood, dl[index], epsilon=1e-2 )
+    print( "d2l: " )
+    testfd( hmm4, parameter, HMM.dlikelihood, d2l[index,:], epsilon=1e-2 )
+    print( "d2logl: " )
+    testfd( hmm4, parameter, f3, d2logl[index,:], epsilon=1e-2, relative=true )
 end
 
 @time HMM.em( hmm4, debug=2 )
