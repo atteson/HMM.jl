@@ -65,7 +65,7 @@ function ddffd( hmm, parameter, f, df; delta = 1e-6, relative=false )
     dims = length(size(fd))
     outtype = dims == 0 ? Float64 : Array{Float64,dims}
     result = convert(outtype,df .- fd)
-    result = abs.(relative ? result ./ (1 .+ convert(outtype,df)) : result)
+    result = abs.(relative ? result ./ (1 .+ abs.(convert(outtype,df))) : result)
     return result
 end
 
@@ -73,10 +73,8 @@ function testfd( hmm, parameter, f, df; delta = 1e-6, epsilon = 1e-4, relative=f
     diffs = ddffd( hmm, parameter, f, df, delta=delta, relative=relative )
     (max, index) = findmax( diffs )
     location = join( Tuple(index), ", " )
-    println( "Max is $max (out of $epsilon) at $location" )
-    if max >= epsilon
-        @assert( false )
-    end
+    println( "Max is $max (out of $epsilon) at ($location)" )
+    @assert( max < epsilon )
 end
 
 hmm4 = HMM.randomhmm( hmm1.graph, calc=Brob, seed=2 )
@@ -97,7 +95,7 @@ d2logl = copy( HMM.d2loglikelihood( hmm4 ) );
 
 f1 = m -> log.(HMM.probabilities(m))
 f2 = m -> permutedims(HMM.probabilities(m) .* permutedims(HMM.dlogprobabilities(m),[3,2,1]), [3,2,1])
-f3 = m -> HMM.dlikelihood(m)./HMM.likelihood(m)
+f3 = m -> (HMM.dlikelihood(m)'./HMM.likelihood(m))'
 # note the constraint to add to 1 is handled elsewhere
 for index in 1:m*(m+2)
     if index <= m^2
@@ -128,11 +126,11 @@ for index in 1:m*(m+2)
     testfd( hmm4, parameter, HMM.dforwardprobabilities, d2alpha[index,:,:,:], epsilon=1e-2, relative=true )
 
     print( "dl: " )
-    testfd( hmm4, parameter, HMM.likelihood, dl[index], epsilon=1e-2 )
+    testfd( hmm4, parameter, HMM.likelihood, dl[index,:], epsilon=1e-2 )
     print( "d2l: " )
-    testfd( hmm4, parameter, HMM.dlikelihood, d2l[index,:], epsilon=1e-2 )
+    testfd( hmm4, parameter, HMM.dlikelihood, d2l[index,:,:], epsilon=1e-2 )
     print( "d2logl: " )
-    testfd( hmm4, parameter, f3, d2logl[index,:], epsilon=1e-2, relative=true )
+    testfd( hmm4, parameter, f3, d2logl[index,:,:], epsilon=1e-2, delta=1e-4, relative=true )
 end
 
 @time HMM.em( hmm4, debug=2 )

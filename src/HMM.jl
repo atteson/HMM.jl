@@ -71,10 +71,10 @@ mutable struct GaussianHMM{Calc <: Real, Out <: Real}
     
     gamma::DirtyMatrix{Calc}
     
-    likelihood::Calc
-    dlikelihood::DirtyVector{Calc}
-    d2likelihood::DirtyMatrix{Calc}
-    d2loglikelihood::DirtyMatrix{Calc}
+    likelihood::DirtyVector{Calc}
+    dlikelihood::DirtyMatrix{Calc}
+    d2likelihood::DirtyArray{Array{Calc,3}}
+    d2loglikelihood::DirtyArray{Array{Calc,3}}
 
     y::Vector{Out}
 
@@ -106,10 +106,10 @@ GaussianHMM(
         
     DirtyMatrix{Calc}(),
         
-    convert( Calc, NaN ),
     DirtyVector{Calc}(),
     DirtyMatrix{Calc}(),
-    DirtyMatrix{Calc}(),
+    DirtyArray{Array{Calc,3}}(),
+    DirtyArray{Array{Calc,3}}(),
         
     Vector{Out}(),
     scratch,
@@ -134,7 +134,7 @@ Base.copy( hmm::GaussianHMM ) =
         copy( hmm.xi ),
         copy( hmm.gamma ),
         
-        hmm.likelihood,
+        copy( hmm.likelihood ),
         copy( hmm.dlikelihood ),
         copy( hmm.d2likelihood ),
         copy( hmm.d2loglikelihood ),
@@ -196,7 +196,7 @@ function clear( hmm::GaussianHMM{Calc} ) where {Calc}
     hmm.xi.dirty = true
     hmm.gamma.dirty = true
     
-    hmm.likelihood = convert( Calc, NaN )
+    hmm.likelihood.dirty = true
     hmm.dlikelihood.dirty = true
     hmm.d2likelihood.dirty = true
     hmm.d2loglikelihood.dirty = true
@@ -264,9 +264,10 @@ function setobservations( hmm::GaussianHMM{Calc}, y::Vector{U} ) where {Calc, U 
     hmm.xi = DirtyArray( zeros( Calc, T-1, m, m ) )
     hmm.gamma = DirtyArray( zeros( Calc, T, m ) )
 
-    hmm.dlikelihood = DirtyArray( zeros( Calc, m*(m+2) ) )
-    hmm.d2likelihood = DirtyArray( zeros( Calc, m*(m+2), m*(m+2) ) )
-    hmm.d2loglikelihood = DirtyArray( zeros( Calc, m*(m+2), m*(m+2) ) )
+    hmm.likelihood = DirtyArray( zeros( Calc, T ) )
+    hmm.dlikelihood = DirtyArray( zeros( Calc, m*(m+2), T ) )
+    hmm.d2likelihood = DirtyArray( zeros( Calc, m*(m+2), m*(m+2), T ) )
+    hmm.d2loglikelihood = DirtyArray( zeros( Calc, m*(m+2), m*(m+2), T ) )
     
     clear( hmm )
     hmm.y = y
@@ -464,18 +465,20 @@ function backwardprobabilities( hmm::GaussianHMM{Calc, Out} ) where {Calc, Out}
 end
 
 function likelihood( hmm::GaussianHMM{Calc} ) where {Calc}
-    if isnan(hmm.likelihood)
+    if hmm.likelihood.dirty
         alpha = forwardprobabilities( hmm )
-        hmm.likelihood = sum(alpha[end,:])
+        hmm.likelihood.data[:] = sum(alpha, dims=2)
+
+        hmm.likelihood.dirty = false
     end
-    return hmm.likelihood
+    return hmm.likelihood.data
 end
 
 function dlikelihood( hmm::GaussianHMM{Calc} ) where {Calc}
     if hmm.dlikelihood.dirty
         dalpha = dforwardprobabilities( hmm )
         (p,m,T) = size(dalpha)
-        hmm.dlikelihood.data[:] = reshape(sum(dalpha[:,:,end],dims=2), (p,))
+        hmm.dlikelihood.data[:,:] = reshape(sum(dalpha[:,:,:],dims=2), (p,T))
         
         hmm.dlikelihood.dirty = false
     end
@@ -486,7 +489,7 @@ function d2likelihood( hmm::GaussianHMM{Calc} ) where {Calc}
     if hmm.d2likelihood.dirty
         d2alpha = d2forwardprobabilities( hmm )
         (p,p,m,T) = size(d2alpha)
-        hmm.d2likelihood.data[:,:] = reshape(sum(d2alpha[:,:,:,end],dims=3), (p,p))
+        hmm.d2likelihood.data[:,:,:] = reshape(sum(d2alpha[:,:,:,:],dims=3), (p,p,T))
         
         hmm.d2likelihood.dirty = false
     end
@@ -498,8 +501,11 @@ function d2loglikelihood( hmm::GaussianHMM{Calc} ) where {Calc}
         l = likelihood( hmm )
         dl = dlikelihood( hmm )
         d2l = d2likelihood( hmm )
+        T = length(l)
 
-        hmm.d2loglikelihood.data[:,:] = d2l ./ l - dl * dl' ./ l^2
+        for i = 1:T
+            hmm.d2loglikelihood.data[:,:,i] = d2l[:,:,i] ./ l[i] - dl[:,i] * dl[:,i]' ./ l[i]^2
+        end
         
         hmm.d2loglikelihood.dirty = false
     end
@@ -510,7 +516,7 @@ function conditionaljointstateprobabilities( hmm::GaussianHMM{Calc,Out} ) where 
     if hmm.xi.dirty
         alpha = forwardprobabilities( hmm )
         beta = backwardprobabilities( hmm )
-        proby = likelihood( hmm )
+        proby = likelihood( hmm )[end]
         b = probabilities( hmm )
         (T,m) = size(alpha)
         
@@ -569,7 +575,7 @@ function em(
     nexthmm = copy( hmm )
     hmms = [hmm, nexthmm]
     oldlikelihood = zero(Calc)
-    newlikelihood = likelihood( hmm )
+    newlikelihood = likelihood( hmm )[end]
     done = false
     i = 1
 
@@ -584,7 +590,7 @@ function em(
             any(isnan.(hmms[3-i].means)) || any(isnan.(hmms[3-i].stds)) || any(hmms[3-i].stds.<=0) ||
             iterations >= maxiterations
         if !done
-            newlikelihood = likelihood( hmms[3-i] )
+            newlikelihood = likelihood( hmms[3-i] )[end]
             done = newlikelihood / oldlikelihood - 1 <= epsilon
         end
         i = 3-i
