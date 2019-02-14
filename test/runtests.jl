@@ -139,6 +139,8 @@ error = HMM.permutederror( hmm1, hmm4 )
 @assert( error.means < 1e-2 )
 @assert( error.stds < 1e-2 )
 
+convert( Matrix{Float64}, HMM.sandwich( hmm4 ) )
+
 file = open( name, "w" )
 write( file, hmm4 )
 close(file)

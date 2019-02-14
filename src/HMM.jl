@@ -512,6 +512,19 @@ function d2loglikelihood( hmm::GaussianHMM{Calc} ) where {Calc}
     return hmm.d2loglikelihood.data
 end
 
+function sandwich( hmm::GaussianHMM{Calc} ) where {Calc}
+    l = likelihood( hmm )
+    dl = dlikelihood( hmm )
+    d2logl = d2loglikelihood( hmm )
+    
+    (p,T) = size(dl)
+    dlogl = [zeros(1,p); dl'./l]
+    dlogln = diff( dlogl, dims=1 )
+    V = dlogln' * dlogln
+    J = d2logl[:,:,end]
+    return inv(J) * V * inv(J)
+end
+
 function conditionaljointstateprobabilities( hmm::GaussianHMM{Calc,Out} ) where {Calc,Out}
     if hmm.xi.dirty
         alpha = forwardprobabilities( hmm )
