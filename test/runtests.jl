@@ -46,9 +46,6 @@ error = HMM.permutederror( hmm1, hmm3 )
 @assert( error.means < 1e-2 )
 @assert( error.stds < 1e-2 )
 
-hmm4 = HMM.randomhmm( hmm1.graph, calc=Brob, seed=2 )
-HMM.setobservations( hmm4, y2 );
-
 # check derivatives; need to do this before checking statistical convergence
 # since MLE has 0 likelihood derivative
 function ddffd( hmm, parameter, f, df; delta = 1e-6, relative=false )
@@ -68,7 +65,7 @@ function ddffd( hmm, parameter, f, df; delta = 1e-6, relative=false )
     dims = length(size(fd))
     outtype = dims == 0 ? Float64 : Array{Float64,dims}
     result = convert(outtype,df .- fd)
-    result = abs.(relative ? result : result ./ (1 .+ convert(outtype,df)))
+    result = abs.(relative ? result ./ (1 .+ convert(outtype,df)) : result)
     return result
 end
 
@@ -81,6 +78,9 @@ function testfd( hmm, parameter, f, df; delta = 1e-6, epsilon = 1e-4, relative=f
     end
 end
 
+hmm4 = HMM.randomhmm( hmm1.graph, calc=Brob, seed=2 )
+HMM.setobservations( hmm4, y2 );
+
 b = copy( HMM.probabilities( hmm4 ) );
 (T,m) = size(b)
 dlogb = copy( HMM.dlogprobabilities( hmm4 ) );
@@ -89,11 +89,14 @@ d2b = copy( HMM.d2probabilities( hmm4 ) );
 alpha = copy( HMM.forwardprobabilities( hmm4 ) );
 dalpha = copy( HMM.dforwardprobabilities( hmm4 ) );
 d2alpha = copy( HMM.d2forwardprobabilities( hmm4 ) );
-dl = HMM.dlikelihood( hmm4 )
-d2l = HMM.d2likelihood( hmm4 )
+l = copy( HMM.likelihood( hmm4 ) );
+dl = copy( HMM.dlikelihood( hmm4 ) );
+d2l = copy( HMM.d2likelihood( hmm4 ) );
+d2logl = copy( HMM.d2loglikelihood( hmm4 ) );
 
 f1 = m -> log.(HMM.probabilities(m))
 f2 = m -> permutedims(HMM.probabilities(m) .* permutedims(HMM.dlogprobabilities(m),[3,2,1]), [3,2,1])
+f3 = m -> HMM.dlikelihood(m)./HMM.likelihood(m)
 for i = 1:m
     # first versus transition probabilities
     for j = 1:m
@@ -112,6 +115,7 @@ for i = 1:m
         
         testfd( hmm4, parameter, HMM.likelihood, dl[index1], epsilon=1e-2, string=s )
         testfd( hmm4, parameter, HMM.dlikelihood, d2l[index1,:], epsilon=1e-2, string=s )
+        testfd( hmm4, parameter, f3, d2logl[index1,:], epsilon=1e-2, relative=true, string=s )
     end
     
     # now mean
@@ -129,6 +133,7 @@ for i = 1:m
     
     testfd( hmm4, parameter, HMM.likelihood, dl[index1], epsilon=1e-3, string=s )
     testfd( hmm4, parameter, HMM.dlikelihood, d2l[index1,:], epsilon=1e-2, string=s )
+    testfd( hmm4, parameter, f3, d2logl[index1,:], relative=true, epsilon=1e-2, string=s )
     
     # now standard deviation
     parameter = view( hmm4.stds, i )
@@ -145,6 +150,7 @@ for i = 1:m
     
     testfd( hmm4, parameter, HMM.likelihood, dl[index1], epsilon=1e-3, string=s )
     testfd( hmm4, parameter, HMM.dlikelihood, d2l[index1,:], epsilon=1e-2, string=s )
+    testfd( hmm4, parameter, f3, d2logl[index1,:], relative=true, epsilon=1e-2, string=s )
 end
 
 @time HMM.em( hmm4, debug=2 )
