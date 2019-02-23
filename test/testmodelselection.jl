@@ -1,5 +1,6 @@
 using HMM
 using Brobdingnag
+using Distributions
 
 m = 3
 graph = HMM.fullyconnected( m )
@@ -13,14 +14,15 @@ HMM.em( hmm2, debug=2 )
 hmm1 = HMM.reorder( hmm1 )
 hmm2 = HMM.reorder( hmm2 )
 
-C = HMM.sandwich( hmm2 )
+C = convert( Matrix{Float64}, HMM.sandwich( hmm2 ) )
 
-i=1
-for j = 2:m
-    println( convert( Float64, C[i,i] - C[i,j] - C[j,i] + C[j,j] ) )
-end
-v = [1; -1; zeros(m-2)]
-v' * C * v
+indices = [(i-1)*m+j for i in 1:m, j in 1:m]
+ijs = [divrem(index-1,m) .+ (1,1) for index in indices]
 
+P = convert( Matrix{Float64}, hmm2.transitionprobabilities )
+
+[cdf( Normal( P[i,j], sqrt(C[indices[i,j], indices[i,j]]) ), 0.0 ) for i in 1:m, j in 1:m]
+
+ 
 
 
