@@ -518,22 +518,11 @@ function sandwich( hmm::GaussianHMM{Calc} ) where {Calc}
     d2logl = d2loglikelihood( hmm )
     
     (p,T) = size(dl)
-    m = length(hmm.initialprobabilities)
-
-    C = hcat([[zeros(i*m); fill(1/sqrt(m), m); zeros((m+1-i)*m)] for i in 0:m-1]...)
-    PC = C*C'
-    PnC = one(PC) - PC
-               
     dlogl = [zeros(1,p); dl'./l]
     dlogln = diff( dlogl, dims=1 )
-
-    Pdlogln = dlogln * PnC
-    V = Pdlogln' * Pdlogln
+    V = dlogln' * dlogln
     J = d2logl[:,:,end]
-    PinvJ = PnC * inv(J) * PnC
-    
-    result = PinvJ * V * PinvJ
-    return result
+    return inv(J) * V * inv(J)
 end
 
 function conditionaljointstateprobabilities( hmm::GaussianHMM{Calc,Out} ) where {Calc,Out}
