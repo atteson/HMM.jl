@@ -583,6 +583,7 @@ function em(
     epsilon::Float64 = 0.0,
     debug::Int = 0,
     maxiterations::Iter = Inf,
+    keepintermediates = false,
 ) where {Calc, Out, Iter <: Number}
     t0 = Base.time()
     nexthmm = copy( hmm )
@@ -591,6 +592,10 @@ function em(
     newlikelihood = likelihood( hmm )[end]
     done = false
     i = 1
+
+    if keepintermediates
+        intermediates = [[hmm.transitionprobabilities[:]; hmm.means; hmm.stds]]
+    end
 
     iterations = 1
     while !done
@@ -608,19 +613,23 @@ function em(
         end
         i = 3-i
         iterations += 1
+        if keepintermediates
+            push!( intermediates, [hmms[i].transitionprobabilities[:]; hmms[i].means; hmms[i].stds] )
+        end
     end
 
-    hmm.initialprobabilities = hmms[3-i].initialprobabilities
-    hmm.transitionprobabilities = hmms[3-i].transitionprobabilities
-    hmm.means = hmms[3-i].means
-    hmm.stds = hmms[3-i].stds
-    hmm.scratch = hmms[3-i].scratch
+    hmm.initialprobabilities = hmms[i].initialprobabilities
+    hmm.transitionprobabilities = hmms[i].transitionprobabilities
+    hmm.means = hmms[i].means
+    hmm.stds = hmms[i].stds
+    hmm.scratch = hmms[i].scratch
     
     hmm.scratch[:iterations] = iterations
     hmm.scratch[:time] = Base.time() - t0
+    hmm.scratch[:intermediates] = intermediates
     
     if debug >= 1
-        println( "Final likelihood = $oldlikelihood; iterations = $iterations, time = $(hmm.scratch[:time])" )
+        println( "Final likelihood = $(HMM.likelihood(hmm)[end]); iterations = $iterations, time = $(hmm.scratch[:time])" )
         flush(stdout)
     end
 end
