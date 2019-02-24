@@ -247,6 +247,17 @@ function Base.read( io::IO, ::Type{GaussianHMM{Calc,Out}} ) where {Calc,Out}
     return hmm
 end
 
+getparameters( hmm::GaussianHMM{Calc,Out} ) where {Calc,Out} =
+    [hmm.transitionprobabilities; hmm.means; hmm.stds]
+
+function setparameters!( hmm::GaussianHMM{Calc,Out}, parameters::Vector{Calc} ) where {Calc,Out}
+    m = length(hmm.initialprobabilities)
+    hmm.transitionprobabilities[:] = parameters[1:m*m]
+    hmm.means[:] = parameters[m*m+1:m*(m+1)]
+    hmm.stds[:] = parameters[m*(m+1)+1:m*(m+2)]
+    clear( hmm )
+end
+
 function setobservations( hmm::GaussianHMM{Calc}, y::Vector{U} ) where {Calc, U <: Real}
     T = length(y)
     m = length(hmm.initialprobabilities)
@@ -516,7 +527,7 @@ function sandwich( hmm::GaussianHMM{Calc} ) where {Calc}
     l = likelihood( hmm )
     dl = dlikelihood( hmm )
     d2logl = d2loglikelihood( hmm )
-    
+
     (p,T) = size(dl)
     dlogl = [zeros(1,p); dl'./l]
     dlogln = diff( dlogl, dims=1 )
@@ -584,7 +595,12 @@ function em(
     debug::Int = 0,
     maxiterations::Iter = Inf,
     keepintermediates = false,
+    acceleration = Inf,
 ) where {Calc, Out, Iter <: Number}
+    if acceleration < Inf
+        @assert( keepintermediates )
+    end
+    
     t0 = Base.time()
     nexthmm = copy( hmm )
     hmms = [hmm, nexthmm]
@@ -592,19 +608,22 @@ function em(
     newlikelihood = likelihood( hmm )[end]
     done = false
     i = 1
+    nextacceleration = acceleration
+    m = length(hmm.initialprobabilities)
 
     if keepintermediates
-        intermediates = [[hmm.transitionprobabilities[:]; hmm.means; hmm.stds]]
+        intermediates = [getparameters( hmm )]
     end
 
     iterations = 1
     while !done
         if debug >= 2
-            println( "Likelihood = $newlikelihood" )
+            println( "Iteration $iterations, likelihood = $newlikelihood" )
         end
         emstep( hmms[i], hmms[3-i] )
         oldlikelihood = newlikelihood
-        done = any(isnan.(hmms[3-i].initialprobabilities)) || any(isnan.(hmms[3-i].transitionprobabilities)) ||
+        done = any(isnan.(hmms[3-i].initialprobabilities)) ||
+            any(isnan.(hmms[3-i].transitionprobabilities)) ||
             any(isnan.(hmms[3-i].means)) || any(isnan.(hmms[3-i].stds)) || any(hmms[3-i].stds.<=0) ||
             iterations >= maxiterations
         if !done
@@ -614,7 +633,33 @@ function em(
         i = 3-i
         iterations += 1
         if keepintermediates
-            push!( intermediates, [hmms[i].transitionprobabilities[:]; hmms[i].means; hmms[i].stds] )
+            push!( intermediates, getparameters( hmm ) )
+        end
+        if iterations >= nextacceleration
+            x = intermediates[end-2:end]
+            y = diff(x)
+            ratio = y[1]./y[2]
+            if any(ratio .< 0)
+                println( "Acceleration failed due to oscillations" )
+            else
+                gamma = log.(ratio)
+                beta = y[1]./(exp.(-gamma).-1)
+                alpha = x[1] - beta
+
+                setparameters!( hmms[3-i], alpha )
+                hmms[3-i].transitionprobabilities[:] = max.( hmms[3-1].transitionprobabilities, 0 )
+                hmms[3-i].transitionprobabilities ./= sum( hmms[3-i].transitionprobabilities, dims=2 )
+                
+                newerlikelihood = likelihood( hmms[3-i] )[end]
+                println( "Acceleration yielded $(newerlikelihood)" )
+                if newerlikelihood > newlikelihood
+                    println( "Accepting acceleration" )
+                    newlikelihood = newerlikelihood
+                    i = 3-i
+                    push!( intermediates, getparameters( hmm ) )
+                end
+            end
+            nextacceleration += acceleration
         end
     end
 
