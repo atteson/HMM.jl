@@ -248,7 +248,7 @@ function Base.read( io::IO, ::Type{GaussianHMM{Calc,Out}} ) where {Calc,Out}
 end
 
 getparameters( hmm::GaussianHMM{Calc,Out} ) where {Calc,Out} =
-    [hmm.transitionprobabilities; hmm.means; hmm.stds]
+    [hmm.transitionprobabilities[:]; hmm.means; hmm.stds]
 
 function setparameters!( hmm::GaussianHMM{Calc,Out}, parameters::Vector{Calc} ) where {Calc,Out}
     m = length(hmm.initialprobabilities)
