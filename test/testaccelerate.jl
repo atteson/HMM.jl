@@ -15,7 +15,11 @@ HMM.em( hmm2, debug=2, keepintermediates=true )
 hmm2a = HMM.randomhmm( graph1, calc=Brob, seed=2 )
 HMM.setobservations( hmm2a, y1 );
 HMM.em( hmm2a, debug=2, keepintermediates=true, acceleration=10 )
-# 296 iterations, 113 seconds, exp(117681.20996505348) likelihood
+# 296 iterations, 108 seconds, exp(117681.20996505348) likelihood
+
+C = convert( Matrix{Float64}, HMM.sandwich( hmm2a ) )
+convert(Matrix{Float64}, [HMM.getparameters( hmm2a ) sqrt.(diag(C))] )
+convert(Vector{Float64}, HMM.getparameters( hmm2a )./sqrt.(diag(C)) )
 
 graph3 = HMM.Digraph( [1,1,2,2,2,3,3], [1,2,1,2,3,2,3] )
 hmm3 = HMM.randomhmm( graph3, seed=1 )
@@ -37,5 +41,9 @@ C = convert( Matrix{Float64}, HMM.sandwich( hmm4a ) )
 convert(Matrix{Float64}, [HMM.getparameters( hmm4a ) sqrt.(diag(C))] )
 
 hmm4a3 = HMM.randomhmm( graph1, calc=Brob, seed=3 )
-HMM.setobservations( hmm4a, y3 );
-HMM.em( hmm4a, debug=2, keepintermediates=true, acceleration=10 )
+HMM.setobservations( hmm4a3, y3 );
+HMM.em( hmm4a3, debug=2, keepintermediates=true, acceleration=10 )
+# 551 iterations, 223 seconds, exp(-17394.490665902726) likelihood
+
+C = convert( Matrix{Float64}, HMM.sandwich( hmm4a3 ) )
+convert(Vector{Float64}, [HMM.getparameters( hmm4a3 ) sqrt.(diag(C))] )
