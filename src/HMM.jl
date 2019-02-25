@@ -292,7 +292,11 @@ function probabilities( hmm::GaussianHMM )
     if hmm.b.dirty
         y = observations( hmm )
         for i in 1:length(hmm.initialprobabilities)
-            if hmm.stds[i] == 0.0
+            if isnan(hmm.means[i])
+                for j = 1:size(hmm.b.data[:,1],1)
+                    hmm.b.data[j,i] = NaN
+                end
+            elseif hmm.stds[i] == 0.0
                 for j = 1:size(hmm.b.data[:,1],1)
                     hmm.b.data[j,i] = Inf
                 end
