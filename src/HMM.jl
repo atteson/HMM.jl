@@ -118,8 +118,10 @@ GaussianHMM(
 Base.copy( hmm::GaussianHMM ) =
     GaussianHMM(
         copy( hmm.graph ),
-        copy( hmm.initialprobabilities ), copy( hmm.transitionprobabilities ),
-        copy( hmm.means ), copy( hmm.stds ),
+        copy( hmm.initialprobabilities ),
+        copy( hmm.transitionprobabilities ),
+        copy( hmm.means ),
+        copy( hmm.stds ),
         
         copy( hmm.b ),
         copy( hmm.dlogb ),
@@ -596,6 +598,8 @@ function em(
     maxiterations::Iter = Inf,
     keepintermediates = false,
     acceleration = Inf,
+    accelerationlinestart = 1000,
+    accelerationmaxhalves = 4,
 ) where {Calc, Out, Iter <: Number}
     if acceleration < Inf
         @assert( keepintermediates )
@@ -633,7 +637,7 @@ function em(
         i = 3-i
         iterations += 1
         if keepintermediates
-            push!( intermediates, getparameters( hmm ) )
+            push!( intermediates, getparameters( hmms[i] ) )
         end
         if iterations >= nextacceleration
             x = intermediates[end-2:end]
@@ -646,17 +650,36 @@ function em(
                 beta = y[1]./(exp.(-gamma).-1)
                 alpha = x[1] - beta
 
-                setparameters!( hmms[3-i], alpha )
-                hmms[3-i].transitionprobabilities[:] = max.( hmms[3-1].transitionprobabilities, 0 )
-                hmms[3-i].transitionprobabilities ./= sum( hmms[3-i].transitionprobabilities, dims=2 )
-                
-                newerlikelihood = likelihood( hmms[3-i] )[end]
-                println( "Acceleration yielded $(newerlikelihood)" )
-                if newerlikelihood > newlikelihood
-                    println( "Accepting acceleration" )
+                t = accelerationlinestart
+                newerlikelihood = 0.0
+                optimalparameters = nothing
+                optimalt = 0
+                for j = 1:accelerationmaxhalves
+                    p = alpha .+ beta .* exp.(-gamma * t)
+                    setparameters!( hmms[3-i], p )
+                    hmms[3-i].transitionprobabilities[:] = max.( hmms[3-i].transitionprobabilities, 0 )
+                    hmms[3-i].transitionprobabilities ./= sum( hmms[3-i].transitionprobabilities, dims=2 )
+
+                    if any(hmms[3-i].stds .< 0 )
+                        continue
+                    end
+
+                    evennewerlikelihood = likelihood( hmms[3-i] )[end]
+                    if evennewerlikelihood > newerlikelihood
+                        newerlikelihood = evennewerlikelihood
+                        optimalparameters = p
+                        optimalt = t
+                    end
+                    t = t/2
+                end
+                if newerlikelihood <= newlikelihood
+                    println( "Acceleration not accepted with $(newerlikelihood)" )
+                else
+                    println( "Accepting acceleration with $(newerlikelihood) and t=$optimalt" )
                     newlikelihood = newerlikelihood
                     i = 3-i
-                    push!( intermediates, getparameters( hmm ) )
+                    setparameters!( hmms[i], optimalparameters )
+                    push!( intermediates, optimalparameters )
                 end
             end
             nextacceleration += acceleration
