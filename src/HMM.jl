@@ -292,7 +292,13 @@ function probabilities( hmm::GaussianHMM )
     if hmm.b.dirty
         y = observations( hmm )
         for i in 1:length(hmm.initialprobabilities)
-            hmm.b.data[:,i] = pdf.( Normal( hmm.means[i], hmm.stds[i] ), y )
+            if hmm.stds[i] == 0.0
+                for j = 1:size(hmm.b.data[:,1],1)
+                    hmm.b.data[j,i] = Inf
+                end
+            else
+                hmm.b.data[:,i] = pdf.( Normal( hmm.means[i], hmm.stds[i] ), y )
+            end
         end
 
         hmm.b.dirty = false
@@ -644,7 +650,9 @@ function em(
             y = diff(x)
             ratio = y[1]./y[2]
             if any(ratio .< 0)
-                println( "Acceleration failed due to oscillations" )
+                if debug >= 2
+                    println( "Acceleration failed due to oscillations" )
+                end
             else
                 gamma = log.(ratio)
                 beta = y[1]./(exp.(-gamma).-1)
@@ -673,9 +681,13 @@ function em(
                     t = t/2
                 end
                 if newerlikelihood <= newlikelihood
-                    println( "Acceleration not accepted with $(newerlikelihood)" )
+                    if debug >= 2
+                        println( "Acceleration not accepted with $(newerlikelihood)" )
+                    end
                 else
-                    println( "Accepting acceleration with $(newerlikelihood) and t=$optimalt" )
+                    if debug >= 2
+                        println( "Accepting acceleration with $(newerlikelihood) and t=$optimalt" )
+                    end
                     newlikelihood = newerlikelihood
                     i = 3-i
                     setparameters!( hmms[i], optimalparameters )
@@ -694,7 +706,9 @@ function em(
     
     hmm.scratch[:iterations] = iterations
     hmm.scratch[:time] = Base.time() - t0
-    hmm.scratch[:intermediates] = intermediates
+    if keepintermediates
+        hmm.scratch[:intermediates] = intermediates
+    end
     
     if debug >= 1
         println( "Final likelihood = $(HMM.likelihood(hmm)[end]); iterations = $iterations, time = $(hmm.scratch[:time])" )
