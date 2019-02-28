@@ -298,7 +298,7 @@ function probabilities( hmm::GaussianHMM )
                 end
             elseif hmm.stds[i] == 0.0
                 for j = 1:size(hmm.b.data[:,1],1)
-                    hmm.b.data[j,i] = Inf
+                    hmm.b.data[j,i] = y == hmm.means[i] ? Inf : 0
                 end
             else
                 hmm.b.data[:,i] = pdf.( Normal( hmm.means[i], hmm.stds[i] ), y )
@@ -744,7 +744,7 @@ function permutederror( hmm1::GaussianHMM, hmm2::GaussianHMM )
     return (transitionprobabilities=minerror, means=meanerror, stds=stderror)
 end
 
-function reorder( hmm )
+function reorder!( hmm )
     perm = sortperm(hmm.means)
     hmm.means = hmm.means[perm]
     hmm.stds = hmm.stds[perm]
@@ -766,6 +766,25 @@ function Base.show( io::IO, hmm::GaussianHMM )
     println( io )
     ppv( io, "means:", hmm.means )
     ppv( io, "stds:", hmm.stds )
+end
+
+function draw( outputfile::String, hmm::GaussianHMM )
+    inputfile = tempname()
+
+    reorder!( hmm )
+    
+    open( inputfile, "w" ) do io
+        println( io, "digraph G {" )
+        for index in CartesianIndices(hmm.transitionprobabilities)
+            (i,j) = Tuple(index)
+            probability = hmm.transitionprobabilities[index]
+            value = @sprintf( "%02x", Int(round(convert(Float64,255*probability))) )
+            println( io, "$i -> $j [color=\"#$value$value$value\"];" )
+        end
+        println( io, "}" )
+    end
+    run( `dot -Tpdf $inputfile -o $outputfile` )
+    rm( inputfile )
 end
 
 end # module
