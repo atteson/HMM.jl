@@ -264,23 +264,23 @@ function setobservations( hmm::GaussianHMM{Calc}, y::Vector{U} ) where {Calc, U 
     T = length(y)
     m = length(hmm.initialprobabilities)
     
-    hmm.b = DirtyArray( zeros( Calc, T, m ) )
-    hmm.dlogb = DirtyArray( zeros( Calc, m*(m+2), m, T ) )
-    hmm.d2logb = DirtyArray( zeros( Calc, m*(m+2), m*(m+2), m, T ) )
-    hmm.d2b = DirtyArray( zeros( Calc, m*(m+2), m*(m+2), m, T ) )
-    
-    hmm.alpha = DirtyArray( zeros( Calc, T, m ) )
-    hmm.dalpha = DirtyArray( zeros( Calc, m*(m+2), m, T ) )
-    hmm.d2alpha = DirtyArray( zeros( Calc, m*(m+2), m*(m+2), m, T ) )
-    
-    hmm.beta = DirtyArray( zeros( Calc, T, m ) )
-    hmm.xi = DirtyArray( zeros( Calc, T-1, m, m ) )
-    hmm.gamma = DirtyArray( zeros( Calc, T, m ) )
-
-    hmm.likelihood = DirtyArray( zeros( Calc, T ) )
-    hmm.dlikelihood = DirtyArray( zeros( Calc, m*(m+2), T ) )
-    hmm.d2likelihood = DirtyArray( zeros( Calc, m*(m+2), m*(m+2), T ) )
-    hmm.d2loglikelihood = DirtyArray( zeros( Calc, m*(m+2), m*(m+2), T ) )
+#    hmm.b = DirtyArray( zeros( Calc, T, m ) )
+#    hmm.dlogb = DirtyArray( zeros( Calc, m*(m+2), m, T ) )
+#    hmm.d2logb = DirtyArray( zeros( Calc, m*(m+2), m*(m+2), m, T ) )
+#    hmm.d2b = DirtyArray( zeros( Calc, m*(m+2), m*(m+2), m, T ) )
+#    
+#    hmm.alpha = DirtyArray( zeros( Calc, T, m ) )
+#    hmm.dalpha = DirtyArray( zeros( Calc, m*(m+2), m, T ) )
+#    hmm.d2alpha = DirtyArray( zeros( Calc, m*(m+2), m*(m+2), m, T ) )
+#    
+#    hmm.beta = DirtyArray( zeros( Calc, T, m ) )
+#    hmm.xi = DirtyArray( zeros( Calc, T-1, m, m ) )
+#    hmm.gamma = DirtyArray( zeros( Calc, T, m ) )
+#
+#    hmm.likelihood = DirtyArray( zeros( Calc, T ) )
+#    hmm.dlikelihood = DirtyArray( zeros( Calc, m*(m+2), T ) )
+#    hmm.d2likelihood = DirtyArray( zeros( Calc, m*(m+2), m*(m+2), T ) )
+#    hmm.d2loglikelihood = DirtyArray( zeros( Calc, m*(m+2), m*(m+2), T ) )
     
     clear( hmm )
     hmm.y = y
@@ -288,9 +288,14 @@ end
 
 observations( hmm::GaussianHMM ) = hmm.y
 
-function probabilities( hmm::GaussianHMM )
+function probabilities( hmm::GaussianHMM{Calc} ) where {Calc}
     if hmm.b.dirty
         y = observations( hmm )
+        T = length(y)
+        m = length(hmm.means)
+        if isempty(hmm.b.data)
+            hmm.b.data = zeros( Calc, (T,m) )
+        end
         for i in 1:length(hmm.initialprobabilities)
             if isnan(hmm.means[i])
                 for j = 1:size(hmm.b.data[:,1],1)
@@ -310,10 +315,13 @@ function probabilities( hmm::GaussianHMM )
     return hmm.b.data
 end
 
-function dlogprobabilities( hmm::GaussianHMM )
+function dlogprobabilities( hmm::GaussianHMM{Calc} ) where {Calc}
     if hmm.dlogb.dirty
-        (trash,m,T) = size(hmm.dlogb.data)
         b = probabilities( hmm )
+        (T,m) = size(b)
+        if isempty(hmm.dlogb.data)
+            hmm.dlogb.data = zeros( Calc, m*(m+2), m, T )
+        end
         y = observations( hmm )
         for i = 1:m
             for t = 1:T
@@ -327,10 +335,13 @@ function dlogprobabilities( hmm::GaussianHMM )
     return hmm.dlogb.data
 end
 
-function d2logprobabilities( hmm::GaussianHMM )
+function d2logprobabilities( hmm::GaussianHMM{Calc} ) where {Calc}
     if hmm.d2logb.dirty
         dlogb = dlogprobabilities( hmm )
         (p,m,T) = size(dlogb)
+        if isempty(hmm.d2logb.data)
+            hmm.d2logb.data = zeros( Calc, p, p, m, T )
+        end
         y = observations( hmm )
         for i = 1:m
             for t = 1:T
@@ -354,12 +365,15 @@ function d2logprobabilities( hmm::GaussianHMM )
     return hmm.d2logb.data
 end
 
-function d2probabilities( hmm::GaussianHMM )
+function d2probabilities( hmm::GaussianHMM{Calc} ) where {Calc}
     if hmm.d2b.dirty
         b = probabilities( hmm )
         dlogb = dlogprobabilities( hmm )
         d2logb = d2logprobabilities( hmm )
         (p,m,T) = size(dlogb)
+        if isempty(hmm.d2b.data)
+            hmm.d2b.data = zeros( Calc, m*(m+2), m*(m+2), m, T )
+        end
         for i = 1:m
             for t = 1:T
                 hmm.d2b.data[:,:,i,t] = b[t,i] .* (d2logb[:,:,i,t] + dlogb[:,i,t] * dlogb[:,i,t]')
@@ -382,8 +396,11 @@ end
 
 function forwardprobabilities( hmm::GaussianHMM{Calc,Out} ) where {Calc,Out}
     if hmm.alpha.dirty
-        (T,m) = size(hmm.alpha.data)
         b = probabilities( hmm )
+        (T,m) = size(b)
+        if isempty( hmm.alpha.data )
+            hmm.alpha.data = zeros( Calc, T, m )
+        end
                                    
         hmm.alpha.data[1,:] = hmm.initialprobabilities .* b[1,:]
         hmm.alpha.data[2:T,:] = zeros( Calc, (T-1,m) )
@@ -402,6 +419,10 @@ end
 function dforwardprobabilities( hmm::GaussianHMM{Calc,Out} ) where {Calc,Out}
     if hmm.dalpha.dirty
         (T,m) = size(hmm.alpha.data)
+        if isempty( hmm.dalpha.data )
+            hmm.dalpha.data = zeros( Calc, m*(m+2), m, T )
+        end
+        
         b = probabilities( hmm )
         dlogb = dlogprobabilities( hmm )
         alpha = forwardprobabilities( hmm )
@@ -436,6 +457,9 @@ function d2forwardprobabilities( hmm::GaussianHMM{Calc,Out} ) where {Calc,Out}
         dalpha = dforwardprobabilities( hmm )
 
         (p,m,T) = size(dlogb)
+        if isempty( hmm.d2alpha.data )
+            hmm.d2alpha.data = zeros( Calc, p, p, m, T )
+        end
 
         for i = 1:m
             hmm.d2alpha.data[:,:,i,1] = hmm.initialprobabilities[i] .* d2b[:,:,i,1]
@@ -470,8 +494,11 @@ end
 
 function backwardprobabilities( hmm::GaussianHMM{Calc, Out} ) where {Calc, Out}
     if hmm.beta.dirty
-        (T,m) = size(hmm.beta.data)
         b = probabilities( hmm )
+        (T,m) = size(b)
+        if isempty( hmm.beta.data )
+            hmm.beta.data = zeros( Calc, T, m )
+        end
         
         hmm.beta.data[end,:] = ones(Calc,length(hmm.initialprobabilities))
         hmm.beta.data[1:T-1,:] = zeros( Calc, (T-1,m) )
@@ -490,6 +517,11 @@ end
 function likelihood( hmm::GaussianHMM{Calc} ) where {Calc}
     if hmm.likelihood.dirty
         alpha = forwardprobabilities( hmm )
+        (T,m) = size(alpha)
+        if isempty( hmm.likelihood.data )
+            hmm.likelihood.data = zeros( Calc, T )
+        end
+        
         hmm.likelihood.data[:] = sum(alpha, dims=2)
 
         hmm.likelihood.dirty = false
@@ -501,6 +533,10 @@ function dlikelihood( hmm::GaussianHMM{Calc} ) where {Calc}
     if hmm.dlikelihood.dirty
         dalpha = dforwardprobabilities( hmm )
         (p,m,T) = size(dalpha)
+        if isempty( hmm.dlikelihood.data )
+            hmm.dlikelihood.data = zeros( Calc, p, T )
+        end
+        
         hmm.dlikelihood.data[:,:] = reshape(sum(dalpha[:,:,:],dims=2), (p,T))
         
         hmm.dlikelihood.dirty = false
@@ -512,6 +548,10 @@ function d2likelihood( hmm::GaussianHMM{Calc} ) where {Calc}
     if hmm.d2likelihood.dirty
         d2alpha = d2forwardprobabilities( hmm )
         (p,p,m,T) = size(d2alpha)
+        if isempty( hmm.d2likelihood.data )
+            hmm.d2likelihood.data = zeros( Calc, p, p, T )
+        end
+        
         hmm.d2likelihood.data[:,:,:] = reshape(sum(d2alpha[:,:,:,:],dims=3), (p,p,T))
         
         hmm.d2likelihood.dirty = false
@@ -524,7 +564,11 @@ function d2loglikelihood( hmm::GaussianHMM{Calc} ) where {Calc}
         l = likelihood( hmm )
         dl = dlikelihood( hmm )
         d2l = d2likelihood( hmm )
-        T = length(l)
+        (p,T) = size(dl)
+
+        if isempty( hmm.d2loglikelihood.data )
+            hmm.d2loglikelihood.data = zeros(Calc,p,p,T)
+        end
 
         for i = 1:T
             hmm.d2loglikelihood.data[:,:,i] = d2l[:,:,i] ./ l[i] - dl[:,i] * dl[:,i]' ./ l[i]^2
@@ -555,6 +599,10 @@ function conditionaljointstateprobabilities( hmm::GaussianHMM{Calc,Out} ) where 
         proby = likelihood( hmm )[end]
         b = probabilities( hmm )
         (T,m) = size(alpha)
+
+        if isempty( hmm.xi.data )
+            hmm.xi.data = zeros( Calc, T-1, m, m )
+        end
         
         hmm.xi.data[1:T-1,:,:] = zeros( Calc, (T-1,m,m) )
         for i = 1:T-1
@@ -571,9 +619,14 @@ function conditionaljointstateprobabilities( hmm::GaussianHMM{Calc,Out} ) where 
     return hmm.xi.data
 end
 
-function conditionalstateprobabilities( hmm::GaussianHMM )
+function conditionalstateprobabilities( hmm::GaussianHMM{Calc} ) where {Calc}
     if hmm.gamma.dirty
         xi = conditionaljointstateprobabilities( hmm )
+        (Tm1, m, trash) = size(xi)
+        if isempty( hmm.gamma.data )
+            hmm.gamma.data = zeros( Calc, Tm1 + 1, m )
+        end
+        
         hmm.gamma.data[1:end-1,:] = sum(xi, dims=3)
         hmm.gamma.data[end,:] = sum(xi[end,:,:], dims=1)
 
