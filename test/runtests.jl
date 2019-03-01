@@ -187,8 +187,8 @@ hmm9 = HMM.randomhmm( graph, calc=Brob, seed=4 )
 hmm9.initialprobabilities = [1.0; zeros(2)]
 HMM.setobservations( hmm9, y4 );
 @time HMM.em( hmm9, debug=2 )
-HMM.reorder(hmm9)
-HMM.reorder(hmm6)
+HMM.reorder!(hmm9)
+HMM.reorder!(hmm6)
 
 error = HMM.permutederror( hmm6, hmm7 )
 @assert( error.transitionprobabilities < 1e-2 )
