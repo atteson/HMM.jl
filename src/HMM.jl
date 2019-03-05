@@ -830,9 +830,11 @@ function draw( outputfile::String, hmm::GaussianHMM )
         println( io, "digraph G {" )
         for index in CartesianIndices(hmm.transitionprobabilities)
             (i,j) = Tuple(index)
-            probability = hmm.transitionprobabilities[index]
-            value = @sprintf( "%02x", Int(round(convert(Float64,255*probability))) )
-            println( io, "$i -> $j [color=\"#$value$value$value\"];" )
+            weight = sqrt(1 - hmm.transitionprobabilities[index])
+            value = @sprintf( "%02x", Int(round(convert(Float64,255*weight))) )
+            if value != "00"
+                println( io, "$i -> $j [color=\"#$value$value$value\"];" )
+            end
         end
         println( io, "}" )
     end
