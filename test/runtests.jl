@@ -105,11 +105,11 @@ for index in 1:m*(m+2)
         println( "\n\nTesting transition probability ($i,$j)" )
     elseif index <= m*(m+1)
         i = index - m^2
-        parameter = view( hmm4.means, i )
+        parameter = view( hmm4.stateparameters, 1, i )
         println( "\n\nTesting mean $i" )
     else
         i = index - m*(m+1)
-        parameter = view( hmm4.stds, i )
+        parameter = view( hmm4.stateparameters, 2, i )
         println( "\n\nTesting std $i" )
     end
 
@@ -148,7 +148,7 @@ file = open( name, "r" )
 hmm4a = read( file, typeof(hmm4) )
 close(file)
 rm(name)
-fields = [:initialprobabilities, :transitionprobabilities, :means, :stds]
+fields = [:initialprobabilities, :transitionprobabilities, :stateparameters]
 @assert( all([==( getfield.( [hmm4,hmm4a], field )... ) for field in fields]) )
 @assert( all([==( getfield.( [hmm4.graph,hmm4a.graph], field )... ) for field in [:from,:to]]) )
 

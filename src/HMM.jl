@@ -53,8 +53,7 @@ mutable struct GaussianHMM{Calc <: Real, Out <: Real}
     graph::Digraph
     initialprobabilities::Vector{Calc}
     transitionprobabilities::Matrix{Calc}
-    means::Vector{Out}
-    stds::Vector{Out}
+    stateparameters::Matrix{Out}
 
     b::DirtyMatrix{Calc}
     dlogb::DirtyArray{Array{Calc,3}}
@@ -85,11 +84,10 @@ GaussianHMM(
     g::Digraph,
     pi::Vector{Calc},
     a::Matrix{Calc},
-    mu::Vector{Out},
-    sigma::Vector{Out};
+    stateparameters::Matrix{Out};
     scratch::Dict{Symbol,Any} = Dict{Symbol,Any}(),
 ) where {Calc,Out} = GaussianHMM(
-    g, pi, a, mu, sigma,
+    g, pi, a, stateparameters,
         
     DirtyMatrix{Calc}(),
     DirtyArray{Array{Calc,3}}(),
@@ -120,8 +118,7 @@ Base.copy( hmm::GaussianHMM ) =
         copy( hmm.graph ),
         copy( hmm.initialprobabilities ),
         copy( hmm.transitionprobabilities ),
-        copy( hmm.means ),
-        copy( hmm.stds ),
+        copy( hmm.stateparameters ),
         
         copy( hmm.b ),
         copy( hmm.dlogb ),
@@ -163,23 +160,22 @@ function randomhmm(
     end
     transitionprobabilities ./= sum( transitionprobabilities, dims=2 )
     
-    means = Vector{out}(randn( numstates ))
-    stds = Vector{out}(randn( numstates ).^2)
+    parameters = Matrix{out}([randn( 1, numstates ); randn( 1, numstates ).^2])
     scratch = Dict{Symbol,Any}()
     scratch[:seed] = seed
 
-    return GaussianHMM( g, initialprobabilities, transitionprobabilities, means, stds, scratch=scratch )
+    return GaussianHMM( g, initialprobabilities, transitionprobabilities, parameters, scratch=scratch )
 end
 
 function Base.rand( hmm::GaussianHMM, n::Int )
     cdfs = [ cumsum( hmm.transitionprobabilities[i,:] ) for i in 1:length(hmm.initialprobabilities) ]
     
     state = searchsorted( cumsum( hmm.initialprobabilities ), rand() ).start
-    observations = [rand( Normal(hmm.means[state], hmm.stds[state]) )]
+    observations = [rand( Normal(hmm.stateparameters[1,state], hmm.stateparameters[2,state]) )]
     
     for t = 2:n
         state = searchsorted( cdfs[state], rand() ).start
-        push!( observations, rand( Normal(hmm.means[state], hmm.stds[state]) ) )
+        push!( observations, rand( Normal(hmm.stateparameters[1,state], hmm.stateparameters[2,state]) ) )
     end
     return observations
 end
@@ -230,8 +226,7 @@ function Base.write( io::IO, hmm::GaussianHMM )
     writearray( io, hmm.graph.to )
     writearray( io, hmm.initialprobabilities )
     writearray( io, hmm.transitionprobabilities )
-    writearray( io, hmm.means )
-    writearray( io, hmm.stds )
+    writearray( io, hmm.stateparameters )
     writearray( io, hmm.y )
 end
 
@@ -241,22 +236,20 @@ function Base.read( io::IO, ::Type{GaussianHMM{Calc,Out}} ) where {Calc,Out}
     graph = Digraph( from, to )
     initialprobabilities = readarray( io, Vector{Calc} )
     transitionprobabilities = readarray( io, Matrix{Calc} )
-    means = readarray( io, Vector{Out} )
-    stds = readarray( io, Vector{Out} )
+    parameters = readarray( io, Matrix{Out} )
     y = readarray( io, Vector{Out} )
-    hmm = GaussianHMM( graph, initialprobabilities, transitionprobabilities, means, stds )
+    hmm = GaussianHMM( graph, initialprobabilities, transitionprobabilities, parameters )
     setobservations( hmm, y )
     return hmm
 end
 
 getparameters( hmm::GaussianHMM{Calc,Out} ) where {Calc,Out} =
-    [hmm.transitionprobabilities[:]; hmm.means; hmm.stds]
+    [hmm.transitionprobabilities[:]; hmm.stateparameters[:]]
 
 function setparameters!( hmm::GaussianHMM{Calc,Out}, parameters::Vector{Calc} ) where {Calc,Out}
     m = length(hmm.initialprobabilities)
     hmm.transitionprobabilities[:] = parameters[1:m*m]
-    hmm.means[:] = parameters[m*m+1:m*(m+1)]
-    hmm.stds[:] = parameters[m*(m+1)+1:m*(m+2)]
+    hmm.stateparameters[:] = parameters[m*m+1:m*(m+2)]
     clear( hmm )
 end
 
@@ -292,21 +285,21 @@ function probabilities( hmm::GaussianHMM{Calc} ) where {Calc}
     if hmm.b.dirty
         y = observations( hmm )
         T = length(y)
-        m = length(hmm.means)
+        m = length(hmm.initialprobabilities)
         if isempty(hmm.b.data)
             hmm.b.data = zeros( Calc, (T,m) )
         end
         for i in 1:length(hmm.initialprobabilities)
-            if isnan(hmm.means[i])
+            if isnan(hmm.stateparameters[1,i])
                 for j = 1:size(hmm.b.data[:,1],1)
                     hmm.b.data[j,i] = NaN
                 end
-            elseif hmm.stds[i] == 0.0
+            elseif hmm.stateparameters[2,i] == 0.0
                 for j = 1:size(hmm.b.data[:,1],1)
-                    hmm.b.data[j,i] = y == hmm.means[i] ? Inf : 0
+                    hmm.b.data[j,i] = y == hmm.stateparameters[1,i] ? Inf : 0
                 end
             else
-                hmm.b.data[:,i] = pdf.( Normal( hmm.means[i], hmm.stds[i] ), y )
+                hmm.b.data[:,i] = pdf.( Normal( hmm.stateparameters[1,i], hmm.stateparameters[2,i] ), y )
             end
         end
 
@@ -325,9 +318,9 @@ function dlogprobabilities( hmm::GaussianHMM{Calc} ) where {Calc}
         y = observations( hmm )
         for i = 1:m
             for t = 1:T
-                z = (y[t] - hmm.means[i])/hmm.stds[i]
-                hmm.dlogb.data[m^2 + i,i,t] = z / hmm.stds[i]
-                hmm.dlogb.data[m*(m+1) + i,i,t] = (z^2 - 1)/hmm.stds[i]
+                z = (y[t] - hmm.stateparameters[1,i])/hmm.stateparameters[2,i]
+                hmm.dlogb.data[m^2 + i,i,t] = z / hmm.stateparameters[2,i]
+                hmm.dlogb.data[m*(m+1) + i,i,t] = (z^2 - 1)/hmm.stateparameters[2,i]
             end
         end
         hmm.dlogb.dirty = false
@@ -345,9 +338,8 @@ function d2logprobabilities( hmm::GaussianHMM{Calc} ) where {Calc}
         y = observations( hmm )
         for i = 1:m
             for t = 1:T
-                mu = hmm.means[i]
-                sigma = hmm.stds[i]
-                z = (y[t] - mu)/sigma
+                sigma = hmm.stateparameters[2,i]
+                z = (y[t] - hmm.stateparameters[1,i])/sigma
 
                 mui = m^2+i
                 hmm.d2logb.data[mui,mui,i,t] = -1/sigma^2
@@ -648,8 +640,8 @@ function emstep( hmm::GaussianHMM{Calc,Out}, nexthmm::GaussianHMM ) where {Calc,
     nexthmm.transitionprobabilities = reshape(sum(xi, dims=1), (m,m))./occupation'
     nexthmm.initialprobabilities = gamma[1,:]
     
-    nexthmm.means[:] = gamma' * y./vec(occupation)
-    nexthmm.stds[:] = sqrt.(diag(gamma' * (y .- hmm.means').^2)./vec(occupation))
+    nexthmm.stateparameters[1,:] = gamma' * y./vec(occupation)
+    nexthmm.stateparameters[2,:] = sqrt.(diag(gamma' * (y .- hmm.stateparameters[1,:]').^2)./vec(occupation))
 
     clear( nexthmm )
 end
@@ -691,7 +683,7 @@ function em(
         oldlikelihood = newlikelihood
         done = any(isnan.(hmms[3-i].initialprobabilities)) ||
             any(isnan.(hmms[3-i].transitionprobabilities)) ||
-            any(isnan.(hmms[3-i].means)) || any(isnan.(hmms[3-i].stds)) || any(hmms[3-i].stds.<=0) ||
+            any(isnan.(hmms[3-i].stateparameters)) || any(hmms[3-i].stateparameters[2,:].<=0) ||
             iterations >= maxiterations
         if !done
             newlikelihood = likelihood( hmms[3-i] )[end]
@@ -725,7 +717,7 @@ function em(
                     hmms[3-i].transitionprobabilities[:] = max.( hmms[3-i].transitionprobabilities, 0 )
                     hmms[3-i].transitionprobabilities ./= sum( hmms[3-i].transitionprobabilities, dims=2 )
 
-                    if any(hmms[3-i].stds .< 0 )
+                    if any(hmms[3-i].stateparameters[2,:] .< 0 )
                         continue
                     end
 
@@ -757,8 +749,7 @@ function em(
 
     hmm.initialprobabilities = hmms[i].initialprobabilities
     hmm.transitionprobabilities = hmms[i].transitionprobabilities
-    hmm.means = hmms[i].means
-    hmm.stds = hmms[i].stds
+    hmm.stateparameters = hmms[i].stateparameters
     hmm.scratch = hmms[i].scratch
     
     hmm.scratch[:iterations] = iterations
@@ -792,15 +783,15 @@ function permutederror( hmm1::GaussianHMM, hmm2::GaussianHMM )
             minperm = perm
         end
     end
-    meanerror = norm( hmm1.means[minperm] - hmm2.means, Inf )
-    stderror = norm( hmm1.stds[minperm] - hmm2.stds, Inf )
+    meanerror = norm( hmm1.stateparameters[1,minperm] - hmm2.stateparameters[1,:], Inf )
+    stderror = norm( hmm1.stateparameters[2,minperm] - hmm2.stateparameters[2,:], Inf )
     return (transitionprobabilities=minerror, means=meanerror, stds=stderror)
 end
 
 function reorder!( hmm )
-    perm = sortperm(hmm.means)
-    hmm.means = hmm.means[perm]
-    hmm.stds = hmm.stds[perm]
+    perm = sortperm(hmm.stateparameters[1,:])
+    hmm.stateparameters[1,:] = hmm.stateparameters[1,perm]
+    hmm.stateparameters[2,:] = hmm.stateparameters[2,perm]
     hmm.initialprobabilities = hmm.initialprobabilities[perm]
     hmm.transitionprobabilities = hmm.transitionprobabilities[perm,perm]
     return hmm
@@ -817,8 +808,8 @@ function Base.show( io::IO, hmm::GaussianHMM )
         ppv( io, "", hmm.transitionprobabilities[i,:] )
     end
     println( io )
-    ppv( io, "means:", hmm.means )
-    ppv( io, "stds:", hmm.stds )
+    ppv( io, "means:", hmm.stateparameters[1,:] )
+    ppv( io, "stds:", hmm.stateparameters[2,:] )
 end
 
 function draw( outputfile::String, hmm::GaussianHMM )
