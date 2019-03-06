@@ -55,7 +55,7 @@ x = MathProgBase.getsolution(model)
 @assert( maximum(abs.(x + q.V\q.m)) < 1e-8 )
 
 if hasmethod( MathProgBase.freemodel!, Tuple{typeof(model)} )
-    MathProgBsae.freemodel!( model )
+    MathProgBase.freemodel!( model )
 end
 
 b = [-5.0]

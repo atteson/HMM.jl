@@ -164,8 +164,8 @@ y4 = rand( hmm6, 100_000 );
 hmm7 = HMM.randomhmm( HMM.fullyconnected(3), calc=Brob, seed=4 )
 HMM.setobservations( hmm7, y4 );
 @time HMM.em( hmm7, debug=2 )
-HMM.reorder(hmm7)
-HMM.reorder(hmm6)
+HMM.reorder!(hmm7)
+HMM.reorder!(hmm6)
 
 error = HMM.permutederror( hmm6, hmm7 )
 @assert( error.transitionprobabilities < 1e-2 )
@@ -175,8 +175,8 @@ error = HMM.permutederror( hmm6, hmm7 )
 hmm8 = HMM.randomhmm( graph, calc=Brob, seed=4 )
 HMM.setobservations( hmm8, y4 );
 @time HMM.em( hmm8, debug=2 )
-HMM.reorder(hmm8)
-HMM.reorder(hmm6)
+HMM.reorder!(hmm8)
+HMM.reorder!(hmm6)
 
 error = HMM.permutederror( hmm6, hmm7 )
 @assert( error.transitionprobabilities < 1e-2 )
