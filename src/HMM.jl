@@ -32,10 +32,10 @@ function addedge( g::Digraph, from::Int, to::Int )
     push!( g.to, to )
 end
 
-fullyconnected( n::Int ) = Digraph( vcat( [collect(1:n) for i in 1:n]... ), vcat( [fill(i,n) for i in 1:n]... ) )
+fullyconnected( n::Int ) =
+    Digraph( vcat( [collect(1:n) for i in 1:n]... ), vcat( [fill(i,n) for i in 1:n]... ) )
 
 mutable struct DirtyArray{A <: AbstractArray}
-#    data::Array{T,N}
     data::A
     dirty::Bool
 end
@@ -51,8 +51,8 @@ const DirtyMatrix{T} = DirtyArray{Matrix{T}} where {T}
 
 mutable struct GaussianHMM{Calc <: Real, Out <: Real}
     graph::Digraph
-    initialprobabilities::Vector{Calc}
-    transitionprobabilities::Matrix{Calc}
+    initialprobabilities::Vector{Out}
+    transitionprobabilities::Matrix{Out}
     stateparameters::Matrix{Out}
 
     b::DirtyMatrix{Calc}
@@ -80,10 +80,10 @@ mutable struct GaussianHMM{Calc <: Real, Out <: Real}
     scratch::Dict{Symbol,Any}
 end
 
-GaussianHMM(
+GaussianHMM{Calc}(
     g::Digraph,
-    pi::Vector{Calc},
-    a::Matrix{Calc},
+    pi::Vector{Out},
+    a::Matrix{Out},
     stateparameters::Matrix{Out};
     scratch::Dict{Symbol,Any} = Dict{Symbol,Any}(),
 ) where {Calc,Out} = GaussianHMM(
@@ -151,10 +151,10 @@ function randomhmm(
     Random.seed!( seed )
     
     numstates = max( maximum( g.from ), maximum( g.to ) )
-    initialprobabilities = Vector{calc}(rand( numstates ))
+    initialprobabilities = Vector{out}(rand( numstates ))
     initialprobabilities ./= sum( initialprobabilities )
 
-    transitionprobabilities = zeros( calc, numstates, numstates )
+    transitionprobabilities = zeros( out, numstates, numstates )
     for i = 1:length(g.from)
         transitionprobabilities[g.from[i], g.to[i]] = rand()
     end
@@ -164,7 +164,7 @@ function randomhmm(
     scratch = Dict{Symbol,Any}()
     scratch[:seed] = seed
 
-    return GaussianHMM( g, initialprobabilities, transitionprobabilities, parameters, scratch=scratch )
+    return GaussianHMM{calc}( g, initialprobabilities, transitionprobabilities, parameters, scratch=scratch )
 end
 
 function Base.rand( hmm::GaussianHMM, n::Int )
@@ -234,19 +234,23 @@ function Base.read( io::IO, ::Type{GaussianHMM{Calc,Out}} ) where {Calc,Out}
     from = readarray( io, Vector{Int} )
     to = readarray( io, Vector{Int} )
     graph = Digraph( from, to )
-    initialprobabilities = readarray( io, Vector{Calc} )
-    transitionprobabilities = readarray( io, Matrix{Calc} )
+    initialprobabilities = readarray( io, Vector{Out} )
+    transitionprobabilities = readarray( io, Matrix{Out} )
     parameters = readarray( io, Matrix{Out} )
     y = readarray( io, Vector{Out} )
-    hmm = GaussianHMM( graph, initialprobabilities, transitionprobabilities, parameters )
+    hmm = GaussianHMM{Calc}( graph, initialprobabilities, transitionprobabilities, parameters )
     setobservations( hmm, y )
     return hmm
+end
+
+function getparameters!( hmm::GaussianHMM{Calc,Out}, parameters::Vector{Out} ) where {Calc,Out}
+    parameters[:] = [hmm.transitionprobabilities[:]; hmm.stateparameters[:]]
 end
 
 getparameters( hmm::GaussianHMM{Calc,Out} ) where {Calc,Out} =
     [hmm.transitionprobabilities[:]; hmm.stateparameters[:]]
 
-function setparameters!( hmm::GaussianHMM{Calc,Out}, parameters::Vector{Calc} ) where {Calc,Out}
+function setparameters!( hmm::GaussianHMM{Calc,Out}, parameters::Vector{Out} ) where {Calc,Out}
     m = length(hmm.initialprobabilities)
     hmm.transitionprobabilities[:] = parameters[1:m*m]
     hmm.stateparameters[:] = parameters[m*m+1:m*(m+2)]
@@ -256,24 +260,6 @@ end
 function setobservations( hmm::GaussianHMM{Calc}, y::Vector{U} ) where {Calc, U <: Real}
     T = length(y)
     m = length(hmm.initialprobabilities)
-    
-#    hmm.b = DirtyArray( zeros( Calc, T, m ) )
-#    hmm.dlogb = DirtyArray( zeros( Calc, m*(m+2), m, T ) )
-#    hmm.d2logb = DirtyArray( zeros( Calc, m*(m+2), m*(m+2), m, T ) )
-#    hmm.d2b = DirtyArray( zeros( Calc, m*(m+2), m*(m+2), m, T ) )
-#    
-#    hmm.alpha = DirtyArray( zeros( Calc, T, m ) )
-#    hmm.dalpha = DirtyArray( zeros( Calc, m*(m+2), m, T ) )
-#    hmm.d2alpha = DirtyArray( zeros( Calc, m*(m+2), m*(m+2), m, T ) )
-#    
-#    hmm.beta = DirtyArray( zeros( Calc, T, m ) )
-#    hmm.xi = DirtyArray( zeros( Calc, T-1, m, m ) )
-#    hmm.gamma = DirtyArray( zeros( Calc, T, m ) )
-#
-#    hmm.likelihood = DirtyArray( zeros( Calc, T ) )
-#    hmm.dlikelihood = DirtyArray( zeros( Calc, m*(m+2), T ) )
-#    hmm.d2likelihood = DirtyArray( zeros( Calc, m*(m+2), m*(m+2), T ) )
-#    hmm.d2loglikelihood = DirtyArray( zeros( Calc, m*(m+2), m*(m+2), T ) )
     
     clear( hmm )
     hmm.y = y

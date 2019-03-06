@@ -23,47 +23,18 @@ end
 
 MathProgBase.features_available( ::HMMOptimizer{Calc,Out} ) where {Calc,Out} = [:Grad]
 
-function setparameters!( opt::HMMOptimizer{Calc,Out}, x ) where {Calc,Out}
-    if any(opt.current .!= x)
-        m = length(opt.hmm.initialprobabilities)
-        index = 1
-        for i = 1:m
-            for j = 1:m
-                opt.hmm.transitionprobabilities[i,j] = x[index]
-                index += 1
-            end
-        end
-        opt.hmm.means[:] = x[m^2+1:m*(m+1)]
-        opt.hmm.stds[:] = x[m*(m+1)+1:m*(m+2)]
-        HMM.clear( opt.hmm )
-    end
-end
-
-function getparameters!( opt::HMMOptimizer{Calc,Out}, x ) where {Calc,Out}
-    m = length(opt.hmm.initialprobabilities)
-    index = 1
-    for i = 1:m
-        for j = 1:m
-            x[index] = opt.hmm.transitionprobabilities[i,j]
-            index += 1
-        end
-    end
-    x[m^2+1:m*(m+1)] = opt.hmm.means
-    x[m*(m+1)+1:m*(m+2)] = opt.hmm.stds
-end
-
 function MathProgBase.eval_f( opt::HMMOptimizer{Brob,Float64}, x )
-    setparameters!( opt, x )
+    HMM.setparameters!( opt.hmm, x )
     return HMM.likelihood( opt.hmm ).log
 end
     
 function MathProgBase.eval_g( opt::HMMOptimizer{Calc,Out}, g, x ) where {Calc,Out}
-    setparameters!( opt, x )
+    HMM.setparameters!( opt.hmm, x )
     g[:] = sum(opt.hmm.transitionprobabilities, dims=2)
 end
 
 function MathProgBase.eval_grad_f( opt::HMMOptimizer{Brob,Float64}, grad_f, x )
-    setparameters!( opt, x )
+    HMM.setparameters!( opt.hmm, x )
     l = HMM.likelihood( opt.hmm )
     dl = HMM.dlikelihood( opt.hmm )
     grad_f[:] = dl ./ l
@@ -110,7 +81,7 @@ MathProgBase.jac_structure( opt )
 MathProgBase.loadproblem!(model, m*(m+2), m, [zeros(m^2); fill(-Inf,m); zeros(m)], fill(Inf,m*(m+2)),
                           ones(m), ones(m), :Max, opt)
 parameters = fill( NaN, m*(m+2) )
-getparameters!( opt, parameters )
+HMM.getparameters!( opt.hmm, parameters )
 
 grad_f = fill(NaN,m*(m+2))
 MathProgBase.eval_grad_f( opt, grad_f, parameters )
@@ -147,5 +118,5 @@ HMM.likelihood( emhmm )
 HMM.em( opt.hmm, debug=2 )
 HMM.likelihood( opt.hmm )
 
-getparameters!( opt, parameters )
+HMM.getparameters!( opt.hmm, parameters )
 MathProgBase.eval_f( opt, parameters )
