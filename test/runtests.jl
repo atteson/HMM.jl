@@ -1,5 +1,6 @@
 using HMMs
 using Brobdingnag
+using Distributions
 using Random
 
 Random.seed!(1)
@@ -194,4 +195,15 @@ error = HMMs.permutederror( hmm6, hmm7 )
 @assert( error.transitionprobabilities < 1e-2 )
 @assert( error.means < 1e-2 )
 @assert( error.stds < 1e-2 )
+
+graph = HMMs.fullyconnected(2)
+hmm10 = HMMs.randomhmm( graph, dist=Laplace, calc=Brob, seed=1 )
+y10 = rand( hmm10, 10_000 )
+
+hmm11 = HMMs.randomhmm( graph, dist=Laplace, calc=Brob, seed=2 )
+HMMs.setobservations( hmm11, y10 )
+HMMs.em( hmm11, debug=2 )
+
+HMMs.reorder!( hmm10 )
+HMMs.reorder!( hmm11 )
 

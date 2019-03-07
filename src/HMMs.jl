@@ -145,7 +145,8 @@ Base.copy( hmm::HMM{Dist,Calc,Out} ) where {Dist,Calc,Out} =
         copy( hmm.scratch ),
     )
 
-randomparameters( ::Type{Normal}, numstates::Int ) = [randn( 1, numstates ); randn( 1, numstates ).^2]
+randomparameters( ::Union{Type{Normal},Type{Laplace}}, numstates::Int ) =
+    [randn( 1, numstates ); randn( 1, numstates ).^2]
 
 function randomhmm(
     g::Digraph;
@@ -330,26 +331,6 @@ function probabilities( hmm::LaplaceHMM{Calc} ) where {Calc}
 end
 
 function dlogprobabilities( hmm::GaussianHMM{Calc} ) where {Calc}
-    if hmm.dlogb.dirty
-        b = probabilities( hmm )
-        (T,m) = size(b)
-        if isempty(hmm.dlogb.data)
-            hmm.dlogb.data = zeros( Calc, m*(m+2), m, T )
-        end
-        y = observations( hmm )
-        for i = 1:m
-            for t = 1:T
-                z = (y[t] - hmm.stateparameters[1,i])/hmm.stateparameters[2,i]
-                hmm.dlogb.data[m^2 + i,i,t] = z / hmm.stateparameters[2,i]
-                hmm.dlogb.data[m*(m+1) + i,i,t] = (z^2 - 1)/hmm.stateparameters[2,i]
-            end
-        end
-        hmm.dlogb.dirty = false
-    end
-    return hmm.dlogb.data
-end
-
-function dlogprobabilities( hmm::LaplaceHMM{Calc} ) where {Calc}
     if hmm.dlogb.dirty
         b = probabilities( hmm )
         (T,m) = size(b)
@@ -674,9 +655,27 @@ end
 function fit_mle!( ::Type{Normal},
                    parameters::AbstractVector{Out},
                    x::Vector{Out},
-                   w::Vector{Calc} ) where {Calc,Out}
+                   w::Vector{Calc},
+                   scratch::Dict{Symbol,Any} ) where {Calc,Out}
     mu = dot( w, x )
     sigma = sqrt( dot( w, (x .- mu).^2 ) )
+    parameters[1] = mu
+    parameters[2] = sigma
+end
+
+function fit_mle!( ::Type{Laplace},
+                   parameters::AbstractVector{Out},
+                   x::Vector{Out},
+                   w::Vector{Calc},
+                   scratch::Dict{Symbol,Any} ) where {Calc,Out}
+    if !haskey( scratch, :sortperm )
+        scratch[:sortperm] = sortperm(x)
+    end
+    perm = scratch[:sortperm]
+    
+    cumw = cumsum( w[perm] )
+    mu = x[perm[findfirst(cumw.>=0.5*cumw[end])]]
+    sigma = sqrt( dot( w, abs.(x .- mu) ) )
     parameters[1] = mu
     parameters[2] = sigma
 end
@@ -695,7 +694,7 @@ function emstep( hmm::HMM{Dist,Calc,Out}, nexthmm::HMM{Dist,Calc,Out} ) where {D
     nexthmm.initialprobabilities = gamma[1,:]
 
     for i = 1:m
-        fit_mle!( Dist, view( nexthmm.stateparameters, :, i ), y, gamma[:,i]/occupation[i] )
+        fit_mle!( Dist, view( nexthmm.stateparameters, :, i ), y, gamma[:,i]/occupation[i], hmm.scratch )
     end
 #    nexthmm.stateparameters[1,:] = gamma' * y./vec(occupation)
 #    nexthmm.stateparameters[2,:] = sqrt.(diag(gamma' * (y .- hmm.stateparameters[1,:]').^2)./vec(occupation))
@@ -856,7 +855,7 @@ end
 
 ppv( io, s, v ) = println( io, rpad( s, 32 ), join([@sprintf("%8.2f", 100*convert(Float64,x)) for x in v]) )
 
-function Base.show( io::IO, hmm::GaussianHMM )
+function Base.show( io::IO, hmm::HMM )
     println( io )
     ppv( io, "initial probabilities:", hmm.initialprobabilities )
     println( io )
@@ -865,8 +864,8 @@ function Base.show( io::IO, hmm::GaussianHMM )
         ppv( io, "", hmm.transitionprobabilities[i,:] )
     end
     println( io )
-    ppv( io, "means:", hmm.stateparameters[1,:] )
-    ppv( io, "stds:", hmm.stateparameters[2,:] )
+    ppv( io, "locations:", hmm.stateparameters[1,:] )
+    ppv( io, "scales:", hmm.stateparameters[2,:] )
 end
 
 function draw( outputfile::String, hmm::HMM )
