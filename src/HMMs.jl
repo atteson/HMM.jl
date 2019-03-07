@@ -82,13 +82,13 @@ end
 
 const GaussianHMM{Calc, Out} = HMM{Normal,Calc,Out}
 
-HMM{Dist,Calc}(
+HMM{Dist,Calc,Out}(
     g::Digraph,
     pi::Vector{Out},
     a::Matrix{Out},
     stateparameters::Matrix{Out};
     scratch::Dict{Symbol,Any} = Dict{Symbol,Any}(),
-) where {Dist,Calc,Out} = HMM{Dist}(
+) where {Dist,Calc,Out} = HMM{Dist,Calc,Out}(
     g, pi, a, stateparameters,
         
     DirtyMatrix{Calc}(),
@@ -115,8 +115,8 @@ HMM{Dist,Calc}(
     scratch,
 )
 
-Base.copy( hmm::HMM{Dist} ) where {Dist} =
-    HMM{Dist}(
+Base.copy( hmm::HMM{Dist,Calc,Out} ) where {Dist,Calc,Out} =
+    HMM{Dist,Calc,Out}(
         copy( hmm.graph ),
         copy( hmm.initialprobabilities ),
         copy( hmm.transitionprobabilities ),
@@ -144,11 +144,11 @@ Base.copy( hmm::HMM{Dist} ) where {Dist} =
         copy( hmm.scratch ),
     )
 
-randomparameters( ::Type{Normal} ) = [randn( 1, numstates ); randn( 1, numstates ).^2]
+randomparameters( ::Type{Normal}, numstates::Int ) = [randn( 1, numstates ); randn( 1, numstates ).^2]
 
 function randomhmm(
     g::Digraph;
-    dist::T = Normal,
+    dist::Type{T} = Normal,
     calc::DataType = Float64,
     out::DataType = Float64,
     seed::Int = 1,
@@ -165,18 +165,18 @@ function randomhmm(
     end
     transitionprobabilities ./= sum( transitionprobabilities, dims=2 )
     
-    parameters = Matrix{out}( randomparameters( dist ) )
+    parameters = Matrix{out}( randomparameters( dist, numstates ) )
     scratch = Dict{Symbol,Any}()
     scratch[:seed] = seed
 
-    return HMM{dist,calc}( g, initialprobabilities, transitionprobabilities, parameters, scratch=scratch )
+    return HMM{dist,calc,out}( g, initialprobabilities, transitionprobabilities, parameters, scratch=scratch )
 end
 
 function Base.rand( hmm::HMM{Dist}, n::Int ) where {Dist}
     cdfs = [ cumsum( hmm.transitionprobabilities[i,:] ) for i in 1:length(hmm.initialprobabilities) ]
     
     state = searchsorted( cumsum( hmm.initialprobabilities ), rand() ).start
-    statedists = [Dist(hmm.stateparameters[:,state]) for state in 1:length(hmm.initialprobabilities)]
+    statedists = [Dist(hmm.stateparameters[:,state]...) for state in 1:length(hmm.initialprobabilities)]
     observations = [rand( statedists[state] )]
     
     for t = 2:n
@@ -244,7 +244,7 @@ function Base.read( io::IO, ::Type{HMM{Dist,Calc,Out}} ) where {Dist,Calc,Out}
     transitionprobabilities = readarray( io, Matrix{Out} )
     parameters = readarray( io, Matrix{Out} )
     y = readarray( io, Vector{Out} )
-    hmm = HMM{Dist,Calc}( graph, initialprobabilities, transitionprobabilities, parameters )
+    hmm = HMM{Dist,Calc,Out}( graph, initialprobabilities, transitionprobabilities, parameters )
     setobservations( hmm, y )
     return hmm
 end
@@ -753,7 +753,7 @@ function em(
     end
     
     if debug >= 1
-        println( "Final likelihood = $(HMM.likelihood(hmm)[end]); iterations = $iterations, time = $(hmm.scratch[:time])" )
+        println( "Final likelihood = $(HMMs.likelihood(hmm)[end]); iterations = $iterations, time = $(hmm.scratch[:time])" )
         flush(stdout)
     end
 end
