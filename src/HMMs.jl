@@ -81,6 +81,7 @@ mutable struct HMM{Dist <: Distribution, Calc <: Real, Out <: Real}
 end
 
 const GaussianHMM{Calc, Out} = HMM{Normal,Calc,Out}
+const LaplaceHMM{Calc, Out} = HMM{Laplace,Calc,Out}
 
 HMM{Dist,Calc,Out}(
     g::Digraph,
@@ -301,7 +302,54 @@ function probabilities( hmm::GaussianHMM{Calc} ) where {Calc}
     return hmm.b.data
 end
 
+function probabilities( hmm::LaplaceHMM{Calc} ) where {Calc}
+    if hmm.b.dirty
+        y = observations( hmm )
+        T = length(y)
+        m = length(hmm.initialprobabilities)
+        if isempty(hmm.b.data)
+            hmm.b.data = zeros( Calc, (T,m) )
+        end
+        for i in 1:length(hmm.initialprobabilities)
+            if isnan(hmm.stateparameters[1,i])
+                for j = 1:size(hmm.b.data[:,1],1)
+                    hmm.b.data[j,i] = NaN
+                end
+            elseif hmm.stateparameters[2,i] == 0.0
+                for j = 1:size(hmm.b.data[:,1],1)
+                    hmm.b.data[j,i] = y == hmm.stateparameters[1,i] ? Inf : 0
+                end
+            else
+                hmm.b.data[:,i] = pdf.( Laplace( hmm.stateparameters[1,i], hmm.stateparameters[2,i] ), y )
+            end
+        end
+
+        hmm.b.dirty = false
+    end
+    return hmm.b.data
+end
+
 function dlogprobabilities( hmm::GaussianHMM{Calc} ) where {Calc}
+    if hmm.dlogb.dirty
+        b = probabilities( hmm )
+        (T,m) = size(b)
+        if isempty(hmm.dlogb.data)
+            hmm.dlogb.data = zeros( Calc, m*(m+2), m, T )
+        end
+        y = observations( hmm )
+        for i = 1:m
+            for t = 1:T
+                z = (y[t] - hmm.stateparameters[1,i])/hmm.stateparameters[2,i]
+                hmm.dlogb.data[m^2 + i,i,t] = z / hmm.stateparameters[2,i]
+                hmm.dlogb.data[m*(m+1) + i,i,t] = (z^2 - 1)/hmm.stateparameters[2,i]
+            end
+        end
+        hmm.dlogb.dirty = false
+    end
+    return hmm.dlogb.data
+end
+
+function dlogprobabilities( hmm::LaplaceHMM{Calc} ) where {Calc}
     if hmm.dlogb.dirty
         b = probabilities( hmm )
         (T,m) = size(b)
@@ -596,7 +644,8 @@ function conditionaljointstateprobabilities( hmm::HMM{Dist,Calc,Out} ) where {Di
             for j = 1:length(hmm.graph.from)
                 from = hmm.graph.from[j]
                 to = hmm.graph.to[j]
-                hmm.xi.data[i,from,to] += hmm.transitionprobabilities[from,to] * alpha[i,from] * beta[i+1,to] * b[i+1,to]
+                hmm.xi.data[i,from,to] +=
+                    hmm.transitionprobabilities[from,to] * alpha[i,from] * beta[i+1,to] * b[i+1,to]
             end
         end
         hmm.xi.data[:,:,:] /= proby
@@ -622,6 +671,16 @@ function conditionalstateprobabilities( hmm::HMM{Dist,Calc} ) where {Dist,Calc}
     return hmm.gamma.data
 end
 
+function fit_mle!( ::Type{Normal},
+                   parameters::AbstractVector{Out},
+                   x::Vector{Out},
+                   w::Vector{Calc} ) where {Calc,Out}
+    mu = dot( w, x )
+    sigma = sqrt( dot( w, (x .- mu).^2 ) )
+    parameters[1] = mu
+    parameters[2] = sigma
+end
+
 function emstep( hmm::HMM{Dist,Calc,Out}, nexthmm::HMM{Dist,Calc,Out} ) where {Dist,Calc,Out}
     y = observations( hmm )
     T = length(y)
@@ -634,9 +693,12 @@ function emstep( hmm::HMM{Dist,Calc,Out}, nexthmm::HMM{Dist,Calc,Out} ) where {D
     m = length(hmm.initialprobabilities)
     nexthmm.transitionprobabilities = reshape(sum(xi, dims=1), (m,m))./occupation'
     nexthmm.initialprobabilities = gamma[1,:]
-    
-    nexthmm.stateparameters[1,:] = gamma' * y./vec(occupation)
-    nexthmm.stateparameters[2,:] = sqrt.(diag(gamma' * (y .- hmm.stateparameters[1,:]').^2)./vec(occupation))
+
+    for i = 1:m
+        fit_mle!( Dist, view( nexthmm.stateparameters, :, i ), y, gamma[:,i]/occupation[i] )
+    end
+#    nexthmm.stateparameters[1,:] = gamma' * y./vec(occupation)
+#    nexthmm.stateparameters[2,:] = sqrt.(diag(gamma' * (y .- hmm.stateparameters[1,:]').^2)./vec(occupation))
 
     clear( nexthmm )
 end
