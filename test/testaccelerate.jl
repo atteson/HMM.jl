@@ -1,6 +1,7 @@
 using HMM
 using Brobdingnag
 using PyPlot
+using LinearAlgebra
 
 m = 3
 graph1 = HMM.fullyconnected( m )
@@ -46,4 +47,4 @@ HMM.em( hmm4a3, debug=2, keepintermediates=true, acceleration=10 )
 # 551 iterations, 223 seconds, exp(-17394.490665902726) likelihood
 
 C = convert( Matrix{Float64}, HMM.sandwich( hmm4a3 ) )
-convert(Vector{Float64}, [HMM.getparameters( hmm4a3 ) sqrt.(diag(C))] )
+convert(Vector{Float64}, [HMM.getparameters( hmm4a3 ); sqrt.(diag(C))] )
