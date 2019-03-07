@@ -250,16 +250,17 @@ function Base.read( io::IO, ::Type{HMM{Dist,Calc,Out}} ) where {Dist,Calc,Out}
 end
 
 function getparameters!( hmm::HMM{Dist,Calc,Out}, parameters::Vector{Out} ) where {Dist,Calc,Out}
-    parameters[:] = [hmm.transitionprobabilities[:]; hmm.stateparameters[:]]
+    parameters[:] = [hmm.transitionprobabilities'[:]; hmm.stateparameters'[:]]
 end
 
 getparameters( hmm::HMM{Dist,Calc,Out} ) where {Dist,Calc,Out} =
-    [hmm.transitionprobabilities[:]; hmm.stateparameters[:]]
+    [hmm.transitionprobabilities'[:]; ; hmm.stateparameters'[:]]
 
 function setparameters!( hmm::HMM{Dist,Calc,Out}, parameters::Vector{Out} ) where {Dist,Calc,Out}
     m = length(hmm.initialprobabilities)
-    hmm.transitionprobabilities[:] = parameters[1:m*m]
-    hmm.stateparameters[:] = parameters[m*m+1:m*(m+2)]
+    hmm.transitionprobabilities'[:] = parameters[1:m*m]
+    hmm.stateparameters'[:] = parameters[m*m+1:m*(m+2)]
+#    hmm.stateparameters[2,:] = parameters[m*(m+1)+1:m*(m+2)]
     clear( hmm )
 end
 
