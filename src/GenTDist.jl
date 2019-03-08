@@ -1,13 +1,34 @@
 using Ipopt
 using MathProgBase
-using Random
 using Distributions
 using SpecialFunctions
+
+mutable struct GenTDist <: ContinuousUnivariateDistribution
+    mu::Float64
+    sigma::Float64
+    t::TDist
+end
+
+GenTDist( mu::Float64, sigma::Float64, nu::Float64 ) = GenTDist( mu, sigma, TDist( nu ) )
+
+Base.rand( t::GenTDist ) = t.sigma .* rand( t.t ) .+ t.mu
+
+Base.rand( t::GenTDist, n::Int ) = t.sigma .* rand( t.t, n ) .+ t.mu
+
+Distributions.pdf( t::GenTDist, x::Float64 ) = pdf( t.t, (x - t.mu)/t.sigma)/t.sigma
+
+randomparameters( ::Type{GenTDist} ) = [randn(), rand( Exponential() ), 1 + rand(Exponential())]
+
+randomparameters( ::Type{GenTDist}, n::Int ) =
+    [randn( 1, n ); rand( Exponential(), 1, n ); 1 .+ rand( Exponential(), 1, n )]
 
 mutable struct GenTDistOptimizer <: MathProgBase.AbstractNLPEvaluator
     y::Vector{Float64}
     w::Vector{Float64}
+    debug::Int
 end
+
+GenTDistOptimizer( y::Vector, w::Vector ) = GenTDistOptimizer( y, w, 0 )
 
 function MathProgBase.initialize( ::GenTDistOptimizer, requested_features::Vector{Symbol} )
     unimplemented = setdiff( requested_features, [:Grad] )
@@ -18,14 +39,19 @@ end
 
 MathProgBase.features_available( ::GenTDistOptimizer ) = [:Grad]
 
-function MathProgBase.eval_f( t::GenTDistOptimizer, x )
-    println( "eval_f called with $x" )
+function MathProgBase.eval_f( t::GenTDistOptimizer, x; debug=0 )
+    if t.debug > 0
+        println( "eval_f called with $x" )
+    end
     (mu, sigma, nu) = x
+
+    sigma <= 0.0 && return -Inf
+    
     y = t.y
     w = t.w
     n = sum(w)
     normalysq = ((y .- mu)/sigma).^2
-    constant = n*(log(gamma((nu+1)/2)) - log(nu*pi)/2 - log(gamma(nu/2)) - log(sigma))
+    constant = n*(lgamma((nu+1)/2) - log(nu*pi)/2 - lgamma(nu/2) - log(sigma))
     return constant - (nu+1)/2*sum(w .* log.(1 .+ normalysq/nu))
 end
 
@@ -40,63 +66,30 @@ function MathProgBase.eval_grad_f( t::GenTDistOptimizer, g, x )
     g[2] = -n/sigma + (nu+1)*sum(w .* normalysq ./ (sigma*(nu .+ normalysq)))
     g[3] = n*(digamma((nu+1)/2)/2 - 1/(2*nu) - digamma(nu/2)/2)
     g[3] += -sum(w .* log.(1 .+ normalysq/nu))/2 + (nu+1)/(2*nu)*sum(w .* normalysq ./ (nu .+ normalysq))
+    if t.debug > 0
+        println( "grad_f called with $x, returning $g" )
+    end
 end
 
-Random.seed!(1)
-mu = randn()
-sigma = rand( Exponential() )
-nu = 1 + rand( Exponential() )
-y = sigma*rand( TDist(nu), 1_000_000 ) .+ mu
-w = ones(length(y))
+function fit_mle!( ::Type{GenTDist},
+                   parameters::AbstractVector{Out},
+                   x::Vector{Out},
+                   w::Vector{Calc},
+                   scratch::Dict{Symbol,Any} ) where {Calc,Out}
+    t = GenTDistOptimizer( x, w )
+    
+    solver = IpoptSolver(print_level=0)
 
-mu1 = randn()
-sigma1 = rand( Exponential() )
-nu1 = 1 + rand( Exponential() )
-t = GenTDistOptimizer( y, w )
-MathProgBase.eval_f( t, [mu1, sigma1, nu1] )
+    model = MathProgBase.NonlinearModel(solver)
+    MathProgBase.loadproblem!(model, 3, 0, [-Inf,0.0,1.0], fill(Inf,3), Float64[], Float64[], :Max, t)
+    MathProgBase.setwarmstart!( model, parameters )
+    MathProgBase.optimize!(model)
 
-g = zeros(3)
-MathProgBase.eval_grad_f( t, g, [mu1, sigma1, nu1] )
-
-delta = 1e-8
-fp = MathProgBase.eval_f( t, [mu1 + delta, sigma1, nu1] )
-fm = MathProgBase.eval_f( t, [mu1 - delta, sigma1, nu1] )
-((fp - fm)/(2*delta) - g[1])/g[1]
-fp = MathProgBase.eval_f( t, [mu1, sigma1 + delta, nu1] )
-fm = MathProgBase.eval_f( t, [mu1, sigma1 - delta, nu1] )
-((fp - fm)/(2*delta) - g[2])/g[2]
-fp = MathProgBase.eval_f( t, [mu1, sigma1, nu1 + delta] )
-fm = MathProgBase.eval_f( t, [mu1, sigma1, nu1 - delta] )
-((fp - fm)/(2*delta) - g[3])/g[3]
-
-solver = IpoptSolver()
-
-model = MathProgBase.NonlinearModel(solver)
-MathProgBase.loadproblem!(model, 3, 0, [-Inf,0.0,1.0], fill(Inf,3), Float64[], Float64[], :Max, t)
-MathProgBase.setwarmstart!( model, [mu1, sigma1, nu1] )
-MathProgBase.optimize!(model)
-@assert( MathProgBase.status(model) == :Optimal )
-x = MathProgBase.getsolution(model)
-[x [mu,sigma,nu]]
-
-n = 1_000_000
-y = [sigma*rand( TDist(nu), n ) .+ mu; rand(n)]
-w = [ones(n); zeros(n)]
-perm = randperm(2*n)
-
-t = GenTDistOptimizer( y[perm], w[perm] )
-
-solver = IpoptSolver()
-
-model = MathProgBase.NonlinearModel(solver)
-MathProgBase.loadproblem!(model, 3, 0, [-Inf,0.0,1.0], fill(Inf,3), Float64[], Float64[], :Max, t)
-MathProgBase.setwarmstart!( model, [mu1, sigma1, nu1] )
-MathProgBase.optimize!(model)
-@assert( MathProgBase.status(model) == :Optimal )
-x = MathProgBase.getsolution(model)
-[x [mu,sigma,nu]]
-
-MathProgBase.eval_f( t, x )
-g = zeros(3)
-MathProgBase.eval_grad_f( t, g, x )
+    status = MathProgBase.status(model)
+    if status != :Optimal
+        @warn( "Non-optimal optimization result: $status" )
+    end
+    parameters[:] = MathProgBase.getsolution(model)
+end
+              
 

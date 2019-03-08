@@ -7,6 +7,8 @@ using LinearAlgebra
 using GCTools
 using Printf
 
+include("GenTDist.jl")
+
 struct Digraph
     from::Array{Int}
     to::Array{Int}
@@ -276,7 +278,8 @@ end
 
 observations( hmm::HMM ) = hmm.y
 
-function probabilities( hmm::GaussianHMM{Calc} ) where {Calc}
+function probabilities( hmm::HMM{Dist,Calc} ) where {Dist,Calc}
+    # makes the assumption that the first parameter is location and second is scale
     if hmm.b.dirty
         y = observations( hmm )
         T = length(y)
@@ -284,8 +287,10 @@ function probabilities( hmm::GaussianHMM{Calc} ) where {Calc}
         if isempty(hmm.b.data)
             hmm.b.data = zeros( Calc, (T,m) )
         end
+
+        
         for i in 1:length(hmm.initialprobabilities)
-            if isnan(hmm.stateparameters[1,i])
+            if isnan(hmm.stateparameters[1,i]) || isnan(hmm.stateparameters[2,i])
                 for j = 1:size(hmm.b.data[:,1],1)
                     hmm.b.data[j,i] = NaN
                 end
@@ -294,34 +299,8 @@ function probabilities( hmm::GaussianHMM{Calc} ) where {Calc}
                     hmm.b.data[j,i] = y == hmm.stateparameters[1,i] ? Inf : 0
                 end
             else
-                hmm.b.data[:,i] = pdf.( Normal( hmm.stateparameters[1,i], hmm.stateparameters[2,i] ), y )
-            end
-        end
-
-        hmm.b.dirty = false
-    end
-    return hmm.b.data
-end
-
-function probabilities( hmm::LaplaceHMM{Calc} ) where {Calc}
-    if hmm.b.dirty
-        y = observations( hmm )
-        T = length(y)
-        m = length(hmm.initialprobabilities)
-        if isempty(hmm.b.data)
-            hmm.b.data = zeros( Calc, (T,m) )
-        end
-        for i in 1:length(hmm.initialprobabilities)
-            if isnan(hmm.stateparameters[1,i])
-                for j = 1:size(hmm.b.data[:,1],1)
-                    hmm.b.data[j,i] = NaN
-                end
-            elseif hmm.stateparameters[2,i] == 0.0
-                for j = 1:size(hmm.b.data[:,1],1)
-                    hmm.b.data[j,i] = y == hmm.stateparameters[1,i] ? Inf : 0
-                end
-            else
-                hmm.b.data[:,i] = pdf.( Laplace( hmm.stateparameters[1,i], hmm.stateparameters[2,i] ), y )
+                dist = Dist( hmm.stateparameters[:,i]... )
+                hmm.b.data[:,i] = pdf.( dist, y )
             end
         end
 
@@ -675,7 +654,7 @@ function fit_mle!( ::Type{Laplace},
     
     cumw = cumsum( w[perm] )
     mu = x[perm[findfirst(cumw.>=0.5*cumw[end])]]
-    sigma = sqrt( dot( w, abs.(x .- mu) ) )
+    sigma = dot( w, abs.(x .- mu) )
     parameters[1] = mu
     parameters[2] = sigma
 end
@@ -694,10 +673,9 @@ function emstep( hmm::HMM{Dist,Calc,Out}, nexthmm::HMM{Dist,Calc,Out} ) where {D
     nexthmm.initialprobabilities = gamma[1,:]
 
     for i = 1:m
+        nexthmm.stateparameters[:,i] = hmm.stateparameters[:,i]
         fit_mle!( Dist, view( nexthmm.stateparameters, :, i ), y, gamma[:,i]/occupation[i], hmm.scratch )
     end
-#    nexthmm.stateparameters[1,:] = gamma' * y./vec(occupation)
-#    nexthmm.stateparameters[2,:] = sqrt.(diag(gamma' * (y .- hmm.stateparameters[1,:]').^2)./vec(occupation))
 
     clear( nexthmm )
 end
@@ -744,8 +722,12 @@ function em(
         if !done
             newlikelihood = likelihood( hmms[3-i] )[end]
             done = newlikelihood / oldlikelihood - 1 <= epsilon
+            if !done
+                i = 3-i
+            end
+        else
+            i = 3-i
         end
-        i = 3-i
         iterations += 1
         if keepintermediates
             push!( intermediates, getparameters( hmms[i] ) )
@@ -855,7 +837,7 @@ end
 
 ppv( io, s, v ) = println( io, rpad( s, 32 ), join([@sprintf("%8.2f", 100*convert(Float64,x)) for x in v]) )
 
-function Base.show( io::IO, hmm::HMM )
+function Base.show( io::IO, hmm::HMM{T} ) where {T <: Union{Normal,Laplace}}
     println( io )
     ppv( io, "initial probabilities:", hmm.initialprobabilities )
     println( io )
@@ -866,6 +848,20 @@ function Base.show( io::IO, hmm::HMM )
     println( io )
     ppv( io, "locations:", hmm.stateparameters[1,:] )
     ppv( io, "scales:", hmm.stateparameters[2,:] )
+end
+
+function Base.show( io::IO, hmm::HMM{GenTDist} )
+    println( io )
+    ppv( io, "initial probabilities:", hmm.initialprobabilities )
+    println( io )
+    ppv( io, "transition probabilities:", hmm.transitionprobabilities[1,:] )
+    for i = 2:size(hmm.transitionprobabilities,1)
+        ppv( io, "", hmm.transitionprobabilities[i,:] )
+    end
+    println( io )
+    ppv( io, "locations:", hmm.stateparameters[1,:] )
+    ppv( io, "scales:", hmm.stateparameters[2,:] )
+    ppv( io, "nus:", hmm.stateparameters[3,:] )
 end
 
 function draw( outputfile::String, hmm::HMM )

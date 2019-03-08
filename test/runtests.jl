@@ -207,3 +207,4 @@ HMMs.em( hmm11, debug=2 )
 HMMs.reorder!( hmm10 )
 HMMs.reorder!( hmm11 )
 
+hmm = HMMs.randomhmm( HMMs.fullyconnected(3), dist=Laplace, calc=Brob, seed=1 )
