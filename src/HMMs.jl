@@ -659,7 +659,12 @@ function fit_mle!( ::Type{Laplace},
     parameters[2] = sigma
 end
 
-function emstep( hmm::HMM{Dist,Calc,Out}, nexthmm::HMM{Dist,Calc,Out} ) where {Dist,Calc,Out}
+function emstep(
+    hmm::HMM{Dist,Calc,Out},
+    nexthmm::HMM{Dist,Calc,Out};
+    max_iter::Int = 0,
+    print_level::Int = 0,
+) where {Dist,Calc,Out}
     y = observations( hmm )
     T = length(y)
     
@@ -674,7 +679,13 @@ function emstep( hmm::HMM{Dist,Calc,Out}, nexthmm::HMM{Dist,Calc,Out} ) where {D
 
     for i = 1:m
         nexthmm.stateparameters[:,i] = hmm.stateparameters[:,i]
-        fit_mle!( Dist, view( nexthmm.stateparameters, :, i ), y, gamma[:,i]/occupation[i], hmm.scratch )
+        if max_iter > 0
+            fit_mle!( Dist, view( nexthmm.stateparameters, :, i ), y, gamma[:,i]/occupation[i], hmm.scratch,
+                      max_iter = max_iter, print_level=print_level )
+        else
+            fit_mle!( Dist, view( nexthmm.stateparameters, :, i ), y, gamma[:,i]/occupation[i], hmm.scratch,
+                      print_level=print_level )
+        end
     end
 
     clear( nexthmm )
@@ -689,6 +700,8 @@ function em(
     acceleration = Inf,
     accelerationlinestart = 1000,
     accelerationmaxhalves = 4,
+    max_iter::Int = 0,
+    print_level::Int = 0,
 ) where {Dist, Calc, Out, Iter <: Number}
     if acceleration < Inf
         @assert( keepintermediates )
@@ -713,7 +726,7 @@ function em(
         if debug >= 2
             println( "Iteration $iterations, likelihood = $newlikelihood" )
         end
-        emstep( hmms[i], hmms[3-i] )
+        emstep( hmms[i], hmms[3-i], max_iter=max_iter, print_level=print_level )
         oldlikelihood = newlikelihood
         done = any(isnan.(hmms[3-i].initialprobabilities)) ||
             any(isnan.(hmms[3-i].transitionprobabilities)) ||
@@ -828,8 +841,9 @@ end
 
 function reorder!( hmm )
     perm = sortperm(hmm.stateparameters[1,:])
-    hmm.stateparameters[1,:] = hmm.stateparameters[1,perm]
-    hmm.stateparameters[2,:] = hmm.stateparameters[2,perm]
+    for i = 1:size(hmm.stateparameters,1)
+        hmm.stateparameters[i,:] = hmm.stateparameters[i,perm]
+    end
     hmm.initialprobabilities = hmm.initialprobabilities[perm]
     hmm.transitionprobabilities = hmm.transitionprobabilities[perm,perm]
     return hmm

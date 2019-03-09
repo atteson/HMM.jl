@@ -71,14 +71,18 @@ function MathProgBase.eval_grad_f( t::GenTDistOptimizer, g, x )
     end
 end
 
-function fit_mle!( ::Type{GenTDist},
-                   parameters::AbstractVector{Out},
-                   x::Vector{Out},
-                   w::Vector{Calc},
-                   scratch::Dict{Symbol,Any} ) where {Calc,Out}
+function fit_mle!(
+    ::Type{GenTDist},
+    parameters::AbstractVector{Out},
+    x::Vector{Out},
+    w::Vector{Calc},
+    scratch::Dict{Symbol,Any};
+    max_iter::Int = 3000,
+    print_level::Int = 0,
+) where {Calc,Out}
     t = GenTDistOptimizer( x, w )
     
-    solver = IpoptSolver(print_level=0)
+    solver = IpoptSolver(print_level=print_level, max_iter=max_iter)
 
     model = MathProgBase.NonlinearModel(solver)
     MathProgBase.loadproblem!(model, 3, 0, [-Inf,0.0,1.0], fill(Inf,3), Float64[], Float64[], :Max, t)
