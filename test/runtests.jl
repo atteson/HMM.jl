@@ -207,4 +207,39 @@ HMMs.em( hmm11, debug=2 )
 HMMs.reorder!( hmm10 )
 HMMs.reorder!( hmm11 )
 
-hmm = HMMs.randomhmm( HMMs.fullyconnected(3), dist=Laplace, calc=Brob, seed=1 )
+hmm12 = HMMs.randomhmm( HMMs.fullyconnected(3), dist=Laplace, calc=Brob, seed=1 )
+
+
+hmm13 = HMMs.randomhmm( HMMs.fullyconnected(2), dist=HMMs.GenTDist, calc=Brob, seed=1 )
+y13 = rand( hmm13, 10_000 );
+
+hmm14 = HMMs.randomhmm( HMMs.fullyconnected(2), dist=HMMs.GenTDist, calc=Brob, seed=2 )
+HMMs.setobservations( hmm14, y13 );
+
+b = copy( HMMs.probabilities( hmm14 ) );
+(T,m) = size(b)
+dlogb = copy( HMMs.dlogprobabilities( hmm14 ) );
+
+for index in 1:m*(m+2)
+    if index <= m^2
+        (i,j) = divrem(index - 1, m) .+ (1,1)
+
+        parameter = view( hmm14.transitionprobabilities, i, j )
+        println( "\n\nTesting transition probability ($i,$j)" )
+    elseif index <= m*(m+1)
+        i = index - m^2
+        parameter = view( hmm14.stateparameters, 1, i )
+        println( "\n\nTesting mean $i" )
+    elseif index <= m*(m+2)
+        i = index - m*(m+1)
+        parameter = view( hmm14.stateparameters, 2, i )
+        println( "\n\nTesting std $i" )
+    else
+        i = index - m*(m+2)
+        parameter = view( hmm14.stateparameters, 2, i )
+        println( "\n\nTesting nu $i" )
+    end
+    
+    print( "dlogb: " )
+    testfd( hmm14, parameter, f1, dlogb[index,:,:]' )
+end

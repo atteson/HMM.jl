@@ -6,6 +6,7 @@ using Combinatorics
 using LinearAlgebra
 using GCTools
 using Printf
+using SpecialFunctions
 
 include("GenTDist.jl")
 
@@ -322,6 +323,32 @@ function dlogprobabilities( hmm::GaussianHMM{Calc} ) where {Calc}
                 z = (y[t] - hmm.stateparameters[1,i])/hmm.stateparameters[2,i]
                 hmm.dlogb.data[m^2 + i,i,t] = z / hmm.stateparameters[2,i]
                 hmm.dlogb.data[m*(m+1) + i,i,t] = (z^2 - 1)/hmm.stateparameters[2,i]
+            end
+        end
+        hmm.dlogb.dirty = false
+    end
+    return hmm.dlogb.data
+end
+
+function dlogprobabilities( hmm::HMM{GenTDist,Calc} ) where {Calc}
+    if hmm.dlogb.dirty
+        b = probabilities( hmm )
+        (T,m) = size(b)
+        if isempty(hmm.dlogb.data)
+            hmm.dlogb.data = zeros( Calc, m*(m+3), m, T )
+        end
+        
+        y = observations( hmm )
+        
+        for i = 1:m
+            (mu,sigma,nu) = hmm.stateparameters[:,i]
+            for t = 1:T
+                centeredy = y[t] - mu
+                normalysq = (centeredy/sigma)^2
+                hmm.dlogb.data[m^2 + i, i, t] = (nu+1)*centeredy/(nu*sigma^2 + centeredy^2)
+                hmm.dlogb.data[m*(m+1) + i, i, t] = -1/sigma + (nu+1)* normalysq / (sigma*(nu + normalysq))
+                hmm.dlogb.data[m*(m+2) + i, i, t] = digamma((nu+1)/2)/2 - 1/(2*nu) - digamma(nu/2)/2
+                hmm.dlogb.data[m*(m+2) + i, i, t] += -log(1 + normalysq/nu)/2 + (nu+1)/(2*nu) * normalysq/(nu + normalysq)
             end
         end
         hmm.dlogb.dirty = false
