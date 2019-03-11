@@ -426,7 +426,7 @@ function d2probabilities( hmm::HMM{Dist,Calc} ) where {Dist,Calc}
         d2logb = d2logprobabilities( hmm )
         (p,m,T) = size(dlogb)
         if isempty(hmm.d2b.data)
-            hmm.d2b.data = zeros( Calc, m*(m+2), m*(m+2), m, T )
+            hmm.d2b.data = zeros( Calc, p, p, m, T )
         end
         for i = 1:m
             for t = 1:T
@@ -472,17 +472,18 @@ end
 
 function dforwardprobabilities( hmm::HMM{Dist,Calc,Out} ) where {Dist,Calc,Out}
     if hmm.dalpha.dirty
-        (T,m) = size(hmm.alpha.data)
-        if isempty( hmm.dalpha.data )
-            hmm.dalpha.data = zeros( Calc, m*(m+2), m, T )
-        end
-        
         b = probabilities( hmm )
         dlogb = dlogprobabilities( hmm )
         alpha = forwardprobabilities( hmm )
 
+        (p,m,T) = size(dlogb)
+
+        if isempty( hmm.dalpha.data )
+            hmm.dalpha.data = zeros( Calc, p, m, T )
+        end
+        
         hmm.dalpha.data[:,:,1] = hmm.initialprobabilities' .* (dlogb[:,:,1] .* b[1,:]')
-        hmm.dalpha.data[:,:,2:T] = zeros( m*(m+2), m, T-1 )
+        hmm.dalpha.data[:,:,2:T] = zeros( p, m, T-1 )
         for i = 2:T
             for j = 1:length(hmm.graph.from)
                 from = hmm.graph.from[j]
@@ -518,7 +519,7 @@ function d2forwardprobabilities( hmm::HMM{Dist,Calc,Out} ) where {Dist,Calc,Out}
         for i = 1:m
             hmm.d2alpha.data[:,:,i,1] = hmm.initialprobabilities[i] .* d2b[:,:,i,1]
         end
-        hmm.d2alpha.data[:,:,:,2:T] = zeros( m*(m+2), m*(m+2), m, T-1 )
+        hmm.d2alpha.data[:,:,:,2:T] = zeros( p, p, m, T-1 )
         for i = 2:T
             for j = 1:length(hmm.graph.from)
                 from = hmm.graph.from[j]

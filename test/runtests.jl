@@ -220,6 +220,14 @@ b = copy( HMMs.probabilities( hmm14 ) );
 (T,m) = size(b)
 dlogb = copy( HMMs.dlogprobabilities( hmm14 ) );
 d2logb = copy( HMMs.d2logprobabilities( hmm14 ) );
+d2b = copy( HMMs.d2probabilities( hmm14 ) );
+alpha = copy( HMMs.forwardprobabilities( hmm14 ) );
+dalpha = copy( HMMs.dforwardprobabilities( hmm14 ) );
+d2alpha = copy( HMMs.d2forwardprobabilities( hmm14 ) );
+l = copy( HMMs.likelihood( hmm14 ) );
+dl = copy( HMMs.dlikelihood( hmm14 ) );
+d2l = copy( HMMs.d2likelihood( hmm14 ) );
+d2logl = copy( HMMs.d2loglikelihood( hmm14 ) );
 
 for index in 1:m*(m+2)
     if index <= m^2
@@ -245,4 +253,19 @@ for index in 1:m*(m+2)
     testfd( hmm14, parameter, f1, dlogb[index,:,:]' )
     print( "d2logb: " )
     testfd( hmm14, parameter, HMMs.dlogprobabilities, d2logb[index,:,:,:] )
+    testfd( hmm14, parameter, HMMs.dlogprobabilities, d2logb[index,:,:,:] )
+    print( "d2b: " )
+    testfd( hmm14, parameter, f2, d2b[index,:,:,:] )
+        
+    print( "dalpha: " )
+    testfd( hmm14, parameter, HMMs.forwardprobabilities, dalpha[index,:,:]', epsilon=1e-2, relative=true )
+    print( "d2alpha: " )
+    testfd( hmm14, parameter, HMMs.dforwardprobabilities, d2alpha[index,:,:,:], epsilon=1e-2, relative=true )
+
+    print( "dl: " )
+    testfd( hmm14, parameter, HMMs.likelihood, dl[index,:], epsilon=1e-2 )
+    print( "d2l: " )
+    testfd( hmm14, parameter, HMMs.dlikelihood, d2l[index,:,:], epsilon=1e-2 )
+    print( "d2logl: " )
+    testfd( hmm14, parameter, f3, d2logl[index,:,:], epsilon=1e-2, delta=1e-4, relative=true )
 end
