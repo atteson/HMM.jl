@@ -184,7 +184,7 @@ error = HMMs.permutederror( hmm6, hmm7 )
 @assert( error.means < 1e-2 )
 @assert( error.stds < 1e-2 )
 
-phmm9 = HMMs.randomhmm( graph, calc=Brob, seed=4 )
+hmm9 = HMMs.randomhmm( graph, calc=Brob, seed=4 )
 hmm9.initialprobabilities = [1.0; zeros(2)]
 HMMs.setobservations( hmm9, y4 );
 @time HMMs.em( hmm9, debug=2 )
