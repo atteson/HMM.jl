@@ -184,7 +184,7 @@ error = HMMs.permutederror( hmm6, hmm7 )
 @assert( error.means < 1e-2 )
 @assert( error.stds < 1e-2 )
 
-hmm9 = HMMs.randomhmm( graph, calc=Brob, seed=4 )
+phmm9 = HMMs.randomhmm( graph, calc=Brob, seed=4 )
 hmm9.initialprobabilities = [1.0; zeros(2)]
 HMMs.setobservations( hmm9, y4 );
 @time HMMs.em( hmm9, debug=2 )
@@ -219,6 +219,7 @@ HMMs.setobservations( hmm14, y13 );
 b = copy( HMMs.probabilities( hmm14 ) );
 (T,m) = size(b)
 dlogb = copy( HMMs.dlogprobabilities( hmm14 ) );
+d2logb = copy( HMMs.d2logprobabilities( hmm14 ) );
 
 for index in 1:m*(m+2)
     if index <= m^2
@@ -242,4 +243,6 @@ for index in 1:m*(m+2)
     
     print( "dlogb: " )
     testfd( hmm14, parameter, f1, dlogb[index,:,:]' )
+    print( "d2logb: " )
+    testfd( hmm14, parameter, HMMs.dlogprobabilities, d2logb[index,:,:,:] )
 end

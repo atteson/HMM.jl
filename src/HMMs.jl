@@ -385,6 +385,40 @@ function d2logprobabilities( hmm::GaussianHMM{Calc} ) where {Calc}
     return hmm.d2logb.data
 end
 
+function d2logprobabilities( hmm::HMM{GenTDist,Calc} ) where {Calc}
+    if hmm.d2logb.dirty
+        dlogb = dlogprobabilities( hmm )
+        (p,m,T) = size(dlogb)
+        if isempty(hmm.d2logb.data)
+            hmm.d2logb.data = zeros( Calc, p, p, m, T )
+        end
+        y = observations( hmm )
+        for i = 1:m
+            (mu,sigma,nu) = hmm.stateparameters[:,i]
+            centeredy = y .- mu
+            centeredysq = centeredy .^ 2
+            denom = (nu * sigma^2 .+ centeredysq).^2
+
+            mui = m^2 + i
+            sigmai = m*(m+1) + i
+            nui = m*(m+2) + i
+            hmm.d2logb.data[mui,mui,i,:] = (nu+1) .* (centeredysq .- nu*sigma^2) ./ denom
+            hmm.d2logb.data[mui,sigmai,i,:] = hmm.d2logb.data[sigmai,mui,i,:] = -2*(nu+1)*nu*sigma .* centeredy ./ denom
+            hmm.d2logb.data[mui,nui,i,:] = hmm.d2logb.data[nui,mui,i,:] = (centeredy.^3 .- sigma^2 .* centeredy) ./ denom
+            
+            hmm.d2logb.data[sigmai,sigmai,i,:] =
+                1/sigma^2 .- (nu+1) .* centeredysq .* (3*nu*sigma^2 .+ centeredysq) ./ (sigma^2 .* denom)
+            hmm.d2logb.data[sigmai,nui,i,:] = hmm.d2logb.data[nui,sigmai,i,:] =
+                sigma .* centeredysq .* (centeredysq .- sigma^2) ./ (sigma^2 .* denom)
+
+            hmm.d2logb.data[nui,nui,i,:] =
+                polygamma(1,(nu+1)/2)/2 + 1/(2*nu^2) - polygamma(1,nu/2)/2 .+
+                (nu*(nu+1)/2*sigma^2 .* centeredysq .- (nu+1)/2 .* centeredysq.^2) ./ (nu^2 .* denom)
+        end
+    end
+    return hmm.d2logb.data
+end
+
 function d2probabilities( hmm::HMM{Dist,Calc} ) where {Dist,Calc}
     if hmm.d2b.dirty
         b = probabilities( hmm )
@@ -658,22 +692,28 @@ function conditionalstateprobabilities( hmm::HMM{Dist,Calc} ) where {Dist,Calc}
     return hmm.gamma.data
 end
 
-function fit_mle!( ::Type{Normal},
-                   parameters::AbstractVector{Out},
-                   x::Vector{Out},
-                   w::Vector{Calc},
-                   scratch::Dict{Symbol,Any} ) where {Calc,Out}
+function fit_mle!(
+    ::Type{Normal},
+    parameters::AbstractVector{Out},
+    x::Vector{Out},
+    w::Vector{Calc},
+    scratch::Dict{Symbol,Any};
+    kwargs...
+) where {Calc,Out}
     mu = dot( w, x )
     sigma = sqrt( dot( w, (x .- mu).^2 ) )
     parameters[1] = mu
     parameters[2] = sigma
 end
 
-function fit_mle!( ::Type{Laplace},
-                   parameters::AbstractVector{Out},
-                   x::Vector{Out},
-                   w::Vector{Calc},
-                   scratch::Dict{Symbol,Any} ) where {Calc,Out}
+function fit_mle!(
+    ::Type{Laplace},
+    parameters::AbstractVector{Out},
+    x::Vector{Out},
+    w::Vector{Calc},
+    scratch::Dict{Symbol,Any};
+    kwargs...
+) where {Calc,Out}
     if !haskey( scratch, :sortperm )
         scratch[:sortperm] = sortperm(x)
     end
