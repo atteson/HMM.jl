@@ -397,6 +397,7 @@ function d2logprobabilities( hmm::HMM{GenTDist,Calc} ) where {Calc}
             (mu,sigma,nu) = hmm.stateparameters[:,i]
             centeredy = y .- mu
             centeredysq = centeredy .^ 2
+            normalysq = (centeredy./sigma).^2
             denom = (nu * sigma^2 .+ centeredysq).^2
 
             mui = m^2 + i
@@ -413,7 +414,7 @@ function d2logprobabilities( hmm::HMM{GenTDist,Calc} ) where {Calc}
 
             hmm.d2logb.data[nui,nui,i,:] =
                 polygamma(1,(nu+1)/2)/4 + 1/(2*nu^2) - polygamma(1,nu/2)/4 .+
-                (nu^2*(nu+1)*sigma^2 .* centeredysq .- (nu^2+1)/2 .* centeredysq.^2) ./ (nu^2 .* denom)
+                ((nu-1) .* normalysq .^ 2 ./ 2 .- normalysq .* nu) ./ (nu .* (nu .+ normalysq)).^2
         end
     end
     return hmm.d2logb.data
