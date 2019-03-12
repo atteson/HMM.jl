@@ -289,7 +289,6 @@ function probabilities( hmm::HMM{Dist,Calc} ) where {Dist,Calc}
             hmm.b.data = zeros( Calc, (T,m) )
         end
 
-        
         for i in 1:length(hmm.initialprobabilities)
             if isnan(hmm.stateparameters[1,i]) || isnan(hmm.stateparameters[2,i])
                 for j = 1:size(hmm.b.data[:,1],1)
@@ -347,6 +346,7 @@ function dlogprobabilities( hmm::HMM{GenTDist,Calc} ) where {Calc}
                 normalysq = (centeredy/sigma)^2
                 hmm.dlogb.data[m^2 + i, i, t] = (nu+1)*centeredy/(nu*sigma^2 + centeredy^2)
                 hmm.dlogb.data[m*(m+1) + i, i, t] = -1/sigma + (nu+1)* normalysq / (sigma*(nu + normalysq))
+                
                 hmm.dlogb.data[m*(m+2) + i, i, t] = digamma((nu+1)/2)/2 - 1/(2*nu) - digamma(nu/2)/2
                 hmm.dlogb.data[m*(m+2) + i, i, t] += -log(1 + normalysq/nu)/2 + (nu+1)/(2*nu) * normalysq/(nu + normalysq)
             end
@@ -412,8 +412,8 @@ function d2logprobabilities( hmm::HMM{GenTDist,Calc} ) where {Calc}
                 sigma .* centeredysq .* (centeredysq .- sigma^2) ./ (sigma^2 .* denom)
 
             hmm.d2logb.data[nui,nui,i,:] =
-                polygamma(1,(nu+1)/2)/2 + 1/(2*nu^2) - polygamma(1,nu/2)/2 .+
-                (nu*(nu+1)/2*sigma^2 .* centeredysq .- (nu+1)/2 .* centeredysq.^2) ./ (nu^2 .* denom)
+                polygamma(1,(nu+1)/2)/4 + 1/(2*nu^2) - polygamma(1,nu/2)/4 .+
+                (nu^2*(nu+1)*sigma^2 .* centeredysq .- (nu^2+1)/2 .* centeredysq.^2) ./ (nu^2 .* denom)
         end
     end
     return hmm.d2logb.data
@@ -535,9 +535,9 @@ function d2forwardprobabilities( hmm::HMM{Dist,Calc,Out} ) where {Dist,Calc,Out}
                 hmm.d2alpha.data[paramindex,:,to,i] += alpha[i-1,from] * (dlogb[:,to,i] .* b[i,to])
                 hmm.d2alpha.data[:,paramindex,to,i] += alpha[i-1,from] * (dlogb[:,to,i] .* b[i,to])
 
+                # adding these together all at once preserves symmetry
                 hmm.d2alpha.data[:,:,to,i] +=
-                    dalpha[:,from,i-1] * (dlogb[:,to,i]' .* b[i,to]) * hmm.transitionprobabilities[from,to]
-                hmm.d2alpha.data[:,:,to,i] +=
+                    dalpha[:,from,i-1] * (dlogb[:,to,i]' .* b[i,to]) * hmm.transitionprobabilities[from,to] + 
                     (dlogb[:,to,i] .* b[i,to]) * dalpha[:,from,i-1]' * hmm.transitionprobabilities[from,to]
 
                 hmm.d2alpha.data[:,:,to,i] +=
@@ -743,7 +743,7 @@ function emstep(
 
     m = length(hmm.initialprobabilities)
     nexthmm.transitionprobabilities = reshape(sum(xi, dims=1), (m,m))./occupation'
-    nexthmm.initialprobabilities = gamma[1,:]
+    nexthmm.initialprobabilities = gamma[1,:]./sum(gamma[1,:])
 
     for i = 1:m
         nexthmm.stateparameters[:,i] = hmm.stateparameters[:,i]

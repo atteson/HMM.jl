@@ -229,7 +229,7 @@ dl = copy( HMMs.dlikelihood( hmm14 ) );
 d2l = copy( HMMs.d2likelihood( hmm14 ) );
 d2logl = copy( HMMs.d2loglikelihood( hmm14 ) );
 
-for index in 1:m*(m+2)
+for index in 1:m*(m+3)
     if index <= m^2
         (i,j) = divrem(index - 1, m) .+ (1,1)
 
@@ -245,14 +245,13 @@ for index in 1:m*(m+2)
         println( "\n\nTesting std $i" )
     else
         i = index - m*(m+2)
-        parameter = view( hmm14.stateparameters, 2, i )
+        parameter = view( hmm14.stateparameters, 3, i )
         println( "\n\nTesting nu $i" )
     end
     
     print( "dlogb: " )
     testfd( hmm14, parameter, f1, dlogb[index,:,:]' )
     print( "d2logb: " )
-    testfd( hmm14, parameter, HMMs.dlogprobabilities, d2logb[index,:,:,:] )
     testfd( hmm14, parameter, HMMs.dlogprobabilities, d2logb[index,:,:,:] )
     print( "d2b: " )
     testfd( hmm14, parameter, f2, d2b[index,:,:,:] )
@@ -269,3 +268,25 @@ for index in 1:m*(m+2)
     print( "d2logl: " )
     testfd( hmm14, parameter, f3, d2logl[index,:,:], epsilon=1e-2, delta=1e-4, relative=true )
 end
+
+(mu,sigma,nu) = hmm14.stateparameters[:,1]
+y = hmm14.y[5615]
+centeredy = y - mu
+normalysq = (centeredy/sigma)^2
+centeredysq = centeredy .^ 2
+
+using SpecialFunctions
+
+d1(nu) = digamma((nu+1)/2)/2 - 1/(2*nu) - digamma(nu/2)/2 - log(1 + normalysq/nu)/2 + (nu+1)/(2*nu) * normalysq/(nu + normalysq)
+
+function d2(nu)
+    denom = (nu * sigma^2 .+ centeredysq).^2
+    x = polygamma(1,(nu+1)/2)/4 + 1/(2*nu^2) - polygamma(1,nu/2)/4
+    x = x .+ (nu^2*(nu+1)*sigma^2 .* centeredysq .- (nu^2+1)/2 .* centeredysq.^2) ./ (nu^2 .* denom)
+    return x
+end
+
+d2(nu)
+
+delta = 1e-6
+(d1(nu+delta) - d1(nu-delta))/(2*delta)
