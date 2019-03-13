@@ -34,6 +34,13 @@ hmm1
 hmm2
 
 C = convert( Matrix{Float64}, HMMs.sandwich( hmm2 ) )
+d2logl = HMMs.d2loglikelihood( hmm2 );
+d2logb = HMMs.d2logprobabilities( hmm2 );
+Ihat1 = inv(-convert( Matrix{Float64}, d2logl[2:4,2:4,end] )/n)
+Ihat2 = inv(-convert( Matrix{Float64}, sum( d2logb[2:4,2:4,1,1:end], dims=3 )[:,:,1,1] )/n)
+@assert( maximum(abs.((Ihat1 - n*C[2:4,2:4]) ./ (1 .+ Ihat1))) < 0.01 )
+
+n*C[2:4,2:4]
 
 (mu, sigma, nu) = hmm1.stateparameters
 I = [
@@ -42,8 +49,8 @@ I = [
 0.0 1/((nu+3)*(nu+1)*sigma^2) -(polygamma(1, (nu+1)/2)/2 - polygamma(1, nu/2)/2 + 1/(nu*(nu+1)) - 1/(nu+1) + (nu+2)/(nu*(nu+3)))/2;
 ]
 
-inv(I)/n
-C[2:4,2:4]
+inv(I)
+n*C[2:4,2:4]
 
 d2logl = HMMs.d2loglikelihood( hmm2 );
 -convert( Matrix{Float64}, d2logl[2:4,2:4,end]/n )
