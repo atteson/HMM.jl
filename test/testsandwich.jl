@@ -43,10 +43,20 @@ else
 end
 
 C = convert( Matrix{Float64}, HMMs.sandwich( nhmm4 ) )
+l = HMMs.likelihood( nhmm4 );
+dl = HMMs.dlikelihood( nhmm4 );
+dlogl = dl ./ l';
+ddlogl = diff( dlogl, dims=2 )
+
+J = convert( Matrix{Float64}, sum([ddlogl[:,t] * ddlogl[:,t]' for t in 1:size(ddlogl,2)])/n)
+
 d2logl = HMMs.d2loglikelihood( nhmm4 );
-dlogl = HMMs.d2logprobabilities( nhmm4 );
-Ihat1 = inv(-convert( Matrix{Float64}, d2logl[:,:,end] )/n)
-@assert( maximum(abs.(Ihat1 - n*C[2:3,2:3])) < 0.01 )
+I = -convert( Matrix{Float64}, d2logl[:,:,end] )/n
+
+@assert( maximum(abs.(I[5:8,5:8] - J[5:8,5:8])) < 0.001 )
+
+Ihat1 = inv( I )
+@assert( maximum(abs.(Ihat1 - n*C)) < 0.01 )
 
 
 hmm1 = HMMs.randomhmm( HMMs.fullyconnected(1), dist=HMMs.GenTDist, calc=Brob, seed=1 )
