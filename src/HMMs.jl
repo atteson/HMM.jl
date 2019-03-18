@@ -637,17 +637,54 @@ function d2loglikelihood( hmm::HMM{Dist,Calc} ) where {Dist,Calc}
     return hmm.d2loglikelihood.data
 end
 
+function dcollapse( hmm::HMM )
+    m = length(hmm.initialprobabilities)
+    sp = length(hmm.stateparameters)
+    M = zeros(m*(m-1)+sp, m^2+sp)
+    for i = 1:m*(m-1)+sp
+        q = m==1 ? 0 : div( i-1, m-1 )
+        M[i, i+min(q,m-1)+1] = 1.0
+    end
+    return M
+end
+
+function dexpand( hmm::HMM )
+    m = length(hmm.initialprobabilities)
+    sp = length(hmm.stateparameters)
+    M = zeros(m^2+sp, m*(m-1)+sp)
+    for i = 1:m^2+sp
+        (q,r) = divrem( i-1, m )
+        if r == 0 && i < m^2
+            for j = 1:m-1
+                M[i,q*(m-1)+j] = -1.0
+            end
+        else
+            if i - min(q,m-1) -1 > 0
+                M[i,i-min(q,m-1)-1] = 1.0
+            end
+        end
+    end
+    return M
+end
+
 function sandwich( hmm::HMM{Dist,Calc} ) where {Dist,Calc}
+    # for now, we're only going to put in the equality constraints for the simplex
+
+    dc = dcollapse( hmm )
+
     l = likelihood( hmm )
-    dl = dlikelihood( hmm )
-    d2logl = d2loglikelihood( hmm )
+    dl = dc * dlikelihood( hmm )
 
     (p,T) = size(dl)
     dlogl = [zeros(1,p); dl'./l]
     dlogln = diff( dlogl, dims=1 )
     V = dlogln' * dlogln
-    J = d2logl[:,:,end]
-    return inv(J) * V * inv(J)
+
+    J = dc * d2loglikelihood( hmm )[:,:,end] * dc'
+    
+    de = dexpand( hmm )
+    result = de * inv(J) * V * inv(J) * de'
+    return result
 end
 
 function conditionaljointstateprobabilities( hmm::HMM{Dist,Calc,Out} ) where {Dist,Calc,Out}
@@ -771,6 +808,7 @@ function em(
     accelerationmaxhalves = 4,
     max_iter::Int = 0,
     print_level::Int = 0,
+    timefractiontowardszero = 0.5,
 ) where {Dist, Calc, Out, Iter <: Number}
     if acceleration < Inf
         @assert( keepintermediates )
@@ -823,11 +861,31 @@ function em(
                     println( "Acceleration failed due to oscillations" )
                 end
             else
-                gamma = log.(ratio)
-                beta = y[1]./(exp.(-gamma).-1)
-                alpha = x[1] - beta
+                gamma = -log.(ratio)
+                beta = y[1]./(1 .- exp.(-gamma))
+                alpha = x[3] - beta
 
                 t = accelerationlinestart
+                
+                # let's bound t to where the probabilities go <0 or >1
+                m = length(hmms[3-i].initialprobabilities)
+                for j = 1:m^2
+                    if (gamma[j] > 0 && alpha[j] < 0) || (gamma[j] < 0 && beta[j] < 0)
+                        if alpha[j] + beta[j] <= 0
+                            warn( "Alpha + beta too small; not bounding t in acceleration!" )
+                        else
+                            t = min( t, timefractiontowardszero * -log(-alpha[j]/beta[j])/gamma[j] )
+                        end
+                    elseif (gamma[j] > 0 && alpha[j] > 1) || (gamma[j] < 0 && beta[j] > 0)
+                        if alpha[j] + beta[j] >= 1
+                            warn( "Alpha + beta too big; not bounding t in acceleration!" )
+                        else
+                            t = min( t, timefractiontowardszero * -log((1-alpha[j])/beta[j])/gamma[j] )
+                        end
+                    end
+                end
+
+                    
                 newerlikelihood = 0.0
                 optimalparameters = nothing
                 optimalt = 0
@@ -844,16 +902,12 @@ function em(
                     evennewerlikelihood = likelihood( hmms[3-i] )[end]
                     if evennewerlikelihood > newerlikelihood
                         newerlikelihood = evennewerlikelihood
-                        optimalparameters = p
+                        optimalparameters = getparameters( hmms[3-i] )
                         optimalt = t
                     end
                     t = t/2
                 end
-                if newerlikelihood <= newlikelihood
-                    if debug >= 2
-                        println( "Acceleration not accepted with $(newerlikelihood)" )
-                    end
-                else
+                if newerlikelihood > newlikelihood
                     if debug >= 2
                         println( "Accepting acceleration with $(newerlikelihood) and t=$optimalt" )
                     end
@@ -861,6 +915,10 @@ function em(
                     i = 3-i
                     setparameters!( hmms[i], optimalparameters )
                     push!( intermediates, optimalparameters )
+                else
+                    if debug >= 2
+                        println( "Acceleration not accepted with $(newerlikelihood)" )
+                    end
                 end
             end
             nextacceleration += acceleration

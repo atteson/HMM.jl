@@ -42,16 +42,24 @@ else
     end
 end
 
+nhmm5 = HMMs.randomhmm( HMMs.fullyconnected(2), calc=Brob, seed=3 )
+HMMs.setobservations( nhmm5, y3 );
+#HMMs.em( nhmm5, debug=2, keepintermediates=true, acceleration=10 )
+HMMs.em( nhmm5, debug=2 )
+
 C = convert( Matrix{Float64}, HMMs.sandwich( nhmm4 ) )
 l = HMMs.likelihood( nhmm4 );
-dl = HMMs.dlikelihood( nhmm4 );
+
+
+dc = HMMs.dcollapse( nhmm4 )
+dl = dc * HMMs.dlikelihood( nhmm4 );
 dlogl = dl ./ l';
 ddlogl = diff( dlogl, dims=2 )
 
 J = convert( Matrix{Float64}, sum([ddlogl[:,t] * ddlogl[:,t]' for t in 1:size(ddlogl,2)])/n)
 
 d2logl = HMMs.d2loglikelihood( nhmm4 );
-I = -convert( Matrix{Float64}, d2logl[:,:,end] )/n
+I = -convert( Matrix{Float64}, dc * d2logl[:,:,end] * dc')/n
 
 @assert( maximum(abs.(I[5:8,5:8] - J[5:8,5:8])) < 0.001 )
 
