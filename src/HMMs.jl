@@ -80,44 +80,58 @@ mutable struct HMM{Dist <: Distribution, Calc <: Real, Out <: Real}
 
     y::Vector{Out}
 
+    constraintmatrix::Matrix{Out}
+    constraintvector::Vector{Out}
+    basis::Matrix{Out}
+
     scratch::Dict{Symbol,Any}
 end
 
 const GaussianHMM{Calc, Out} = HMM{Normal,Calc,Out}
 const LaplaceHMM{Calc, Out} = HMM{Laplace,Calc,Out}
 
-HMM{Dist,Calc,Out}(
+function HMM{Dist,Calc,Out}(
     g::Digraph,
     pi::Vector{Out},
     a::Matrix{Out},
     stateparameters::Matrix{Out};
     scratch::Dict{Symbol,Any} = Dict{Symbol,Any}(),
-) where {Dist,Calc,Out} = HMM{Dist,Calc,Out}(
-    g, pi, a, stateparameters,
+) where {Dist,Calc,Out}
+    (p,m) = size(stateparameters)
+    A = [0.0 + (m!=1 && div(j-1,m)==i-1) for i in 1:m, j in 1:m^2]
+    A = [A zeros(m,m*p)]
+    result = HMM{Dist,Calc,Out}(
+        g, pi, a, stateparameters,
         
-    DirtyMatrix{Calc}(),
-    DirtyArray{Array{Calc,3}}(),
-    DirtyArray{Array{Calc,4}}(),
-    DirtyArray{Array{Calc,4}}(),
+        DirtyMatrix{Calc}(),
+        DirtyArray{Array{Calc,3}}(),
+        DirtyArray{Array{Calc,4}}(),
+        DirtyArray{Array{Calc,4}}(),
         
-    DirtyMatrix{Calc}(),
-    DirtyArray{Array{Calc,3}}(),
-    DirtyArray{Array{Calc,4}}(),
+        DirtyMatrix{Calc}(),
+        DirtyArray{Array{Calc,3}}(),
+        DirtyArray{Array{Calc,4}}(),
         
-    DirtyMatrix{Calc}(),
+        DirtyMatrix{Calc}(),
         
-    DirtyArray{Array{Calc,3}}(),
+        DirtyArray{Array{Calc,3}}(),
         
-    DirtyMatrix{Calc}(),
+        DirtyMatrix{Calc}(),
         
-    DirtyVector{Calc}(),
-    DirtyMatrix{Calc}(),
-    DirtyArray{Array{Calc,3}}(),
-    DirtyArray{Array{Calc,3}}(),
+        DirtyVector{Calc}(),
+        DirtyMatrix{Calc}(),
+        DirtyArray{Array{Calc,3}}(),
+        DirtyArray{Array{Calc,3}}(),
         
-    Vector{Out}(),
-    scratch,
-)
+        Vector{Out}(),
+
+        A,
+        ones(m),
+        basis(A),
+        
+        scratch,
+    )
+end
 
 Base.copy( hmm::HMM{Dist,Calc,Out} ) where {Dist,Calc,Out} =
     HMM{Dist,Calc,Out}(
@@ -145,6 +159,11 @@ Base.copy( hmm::HMM{Dist,Calc,Out} ) where {Dist,Calc,Out} =
         copy( hmm.d2loglikelihood ),
         
         copy( hmm.y ),
+
+        copy( hmm.constraintmatrix ),
+        copy( hmm.constraintvector ),
+        copy( hmm.basis ),
+        
         copy( hmm.scratch ),
     )
 
@@ -262,9 +281,9 @@ getparameters( hmm::HMM{Dist,Calc,Out} ) where {Dist,Calc,Out} =
     [hmm.transitionprobabilities'[:]; ; hmm.stateparameters'[:]]
 
 function setparameters!( hmm::HMM{Dist,Calc,Out}, parameters::AbstractVector{Out} ) where {Dist,Calc,Out}
-    m = length(hmm.initialprobabilities)
+    (p,m) = size(hmm.stateparameters)
     hmm.transitionprobabilities'[:] = parameters[1:m*m]
-    hmm.stateparameters'[:] = parameters[m*m+1:m*(m+2)]
+    hmm.stateparameters'[:] = parameters[m*m+1:m*(m+p)]
 #    hmm.stateparameters[2,:] = parameters[m*(m+1)+1:m*(m+2)]
     clear( hmm )
 end
@@ -637,54 +656,17 @@ function d2loglikelihood( hmm::HMM{Dist,Calc} ) where {Dist,Calc}
     return hmm.d2loglikelihood.data
 end
 
-function collapseindex( m::Int, index::Int )
-    (i,j) = divrem( index-1, m )
-    result = min(i,m) * (m-1) + max(i-m,0) * m + j + 1 - (j>i)
+function basis( A::Matrix{Out}; epsilon::Out = 1e-12 ) where {Out <: Number}
+    (m, n) = size(A)
+    (U,S,V) = svd( [A; zeros(n - m, n)] )
+    indices = abs.(S) .< epsilon
+    result = V[:,indices]
     return result
 end
 
-function expandindex( m::Int, index::Int )
-    if index > m*(m-1)
-        result = index + m
-    else
-        (i,j) = divrem( index-1, m-1 )
-        result = i * m + j + 1 + (j>=i)
-    end
-    return result
-end
+dcollapse( hmm::HMM ) = hmm.basis'
 
-function dcollapse( hmm::HMM )
-    m = length(hmm.initialprobabilities)
-    sp = length(hmm.stateparameters)
-    M = zeros(m*(m-1)+sp, m^2+sp)
-    for i = 1:m*(m-1)+sp
-        q = m==1 ? 0 : div( i-1, m-1 )
-        M[i, i+min(q,m-1)+1] = 1.0
-        if i <= m*(m-1)
-            M[i, i] = -1.0
-        end
-    end
-    return M
-end
-
-function dexpand( hmm::HMM )
-    m = length(hmm.initialprobabilities)
-    sp = length(hmm.stateparameters)
-    M = zeros(m^2+sp, m*(m-1)+sp)
-    for i = 1:m^2+sp
-        (q,r) = divrem( i-1, m )
-        if r == 0 && i < m^2
-            for j = 1:m-1
-                M[i,q*(m-1)+j] = -1.0
-            end
-        else
-            if i - min(q,m-1) -1 > 0
-                M[i,i-min(q,m-1)-1] = 1.0
-            end
-        end
-    end
-    return M
-end
+dexpand( hmm::HMM ) = hmm.basis
 
 function sandwich( hmm::HMM{Dist,Calc} ) where {Dist,Calc}
     # for now, we're only going to put in the equality constraints for the simplex

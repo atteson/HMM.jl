@@ -53,11 +53,11 @@ end
 #    HMMs.write( file, nhmm4 )
 #end
 
-C = convert( Matrix{Float64}, HMMs.sandwich( nhmm5 ) )
-l = HMMs.likelihood( nhmm5 );
+C = convert( Matrix{Float64}, HMMs.sandwich( nhmm4 ) )
+l = HMMs.likelihood( nhmm4 );
 
-dc = HMMs.dcollapse( nhmm5 )
-dl = dc * HMMs.dlikelihood( nhmm5 );
+dc = HMMs.dcollapse( nhmm4 )
+dl = dc * HMMs.dlikelihood( nhmm4 );
 dlogl = dl ./ l';
 ddlogl = diff( dlogl, dims=2 )
 
@@ -76,7 +76,7 @@ end
 
 J = convert( Matrix{Float64}, sum([ddlogl[:,t] * ddlogl[:,t]' for t in 1:size(ddlogl,2)])/n)
 
-d2logl = HMMs.d2loglikelihood( nhmm5 );
+d2logl = HMMs.d2loglikelihood( nhmm4 );
 I = -convert( Matrix{Float64}, dc * d2logl[:,:,end] * dc')/n
 
 de = HMMs.dexpand( nhmm5 )
