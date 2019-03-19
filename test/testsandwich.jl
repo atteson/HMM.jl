@@ -42,24 +42,44 @@ else
     end
 end
 
-nhmm5 = HMMs.randomhmm( HMMs.fullyconnected(2), calc=Brob, seed=3 )
-HMMs.setobservations( nhmm5, y3 );
+
+#nhmm5 = HMMs.randomhmm( HMMs.fullyconnected(2), calc=Brob, seed=3 )
+#HMMs.setobservations( nhmm5, y3 );
 #HMMs.em( nhmm5, debug=2, keepintermediates=true, acceleration=10 )
-HMMs.em( nhmm5, debug=2 )
+#HMMs.em( nhmm5, debug=2 )
 
-C = convert( Matrix{Float64}, HMMs.sandwich( nhmm4 ) )
-l = HMMs.likelihood( nhmm4 );
+#filename = joinpath( pathname, "hmm2.3" )
+#open( filename, "w" ) do file
+#    HMMs.write( file, nhmm4 )
+#end
 
+C = convert( Matrix{Float64}, HMMs.sandwich( nhmm5 ) )
+l = HMMs.likelihood( nhmm5 );
 
-dc = HMMs.dcollapse( nhmm4 )
-dl = dc * HMMs.dlikelihood( nhmm4 );
+dc = HMMs.dcollapse( nhmm5 )
+dl = dc * HMMs.dlikelihood( nhmm5 );
 dlogl = dl ./ l';
 ddlogl = diff( dlogl, dims=2 )
 
+using StatsBase
+
+window = 10_000
+i = n - 2 * window - 1
+is = Int[]
+Ms = Matrix{Float64}[]    
+while i < n-1
+    j = min(i + window,n-1)
+    push!( is, i )
+    push!( Ms, convert( Matrix{Float64}, ddlogl[:,i+1:j]*ddlogl[:,i+1:j]'/(j-i)) )
+    global i = j
+end
+
 J = convert( Matrix{Float64}, sum([ddlogl[:,t] * ddlogl[:,t]' for t in 1:size(ddlogl,2)])/n)
 
-d2logl = HMMs.d2loglikelihood( nhmm4 );
+d2logl = HMMs.d2loglikelihood( nhmm5 );
 I = -convert( Matrix{Float64}, dc * d2logl[:,:,end] * dc')/n
+
+de = HMMs.dexpand( nhmm5 )
 
 @assert( maximum(abs.(I[5:8,5:8] - J[5:8,5:8])) < 0.001 )
 

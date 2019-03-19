@@ -261,7 +261,7 @@ end
 getparameters( hmm::HMM{Dist,Calc,Out} ) where {Dist,Calc,Out} =
     [hmm.transitionprobabilities'[:]; ; hmm.stateparameters'[:]]
 
-function setparameters!( hmm::HMM{Dist,Calc,Out}, parameters::Vector{Out} ) where {Dist,Calc,Out}
+function setparameters!( hmm::HMM{Dist,Calc,Out}, parameters::AbstractVector{Out} ) where {Dist,Calc,Out}
     m = length(hmm.initialprobabilities)
     hmm.transitionprobabilities'[:] = parameters[1:m*m]
     hmm.stateparameters'[:] = parameters[m*m+1:m*(m+2)]
@@ -637,6 +637,22 @@ function d2loglikelihood( hmm::HMM{Dist,Calc} ) where {Dist,Calc}
     return hmm.d2loglikelihood.data
 end
 
+function collapseindex( m::Int, index::Int )
+    (i,j) = divrem( index-1, m )
+    result = min(i,m) * (m-1) + max(i-m,0) * m + j + 1 - (j>i)
+    return result
+end
+
+function expandindex( m::Int, index::Int )
+    if index > m*(m-1)
+        result = index + m
+    else
+        (i,j) = divrem( index-1, m-1 )
+        result = i * m + j + 1 + (j>=i)
+    end
+    return result
+end
+
 function dcollapse( hmm::HMM )
     m = length(hmm.initialprobabilities)
     sp = length(hmm.stateparameters)
@@ -644,6 +660,9 @@ function dcollapse( hmm::HMM )
     for i = 1:m*(m-1)+sp
         q = m==1 ? 0 : div( i-1, m-1 )
         M[i, i+min(q,m-1)+1] = 1.0
+        if i <= m*(m-1)
+            M[i, i] = -1.0
+        end
     end
     return M
 end
@@ -804,11 +823,12 @@ function em(
     maxiterations::Iter = Inf,
     keepintermediates = false,
     acceleration = Inf,
-    accelerationlinestart = 1000,
-    accelerationmaxhalves = 4,
+    accelerationlinestart = 500,
+    accelerationmaxhalves = 5,
     max_iter::Int = 0,
     print_level::Int = 0,
     timefractiontowardszero = 0.5,
+    observations = 10,
 ) where {Dist, Calc, Out, Iter <: Number}
     if acceleration < Inf
         @assert( keepintermediates )
@@ -853,72 +873,65 @@ function em(
             push!( intermediates, getparameters( hmms[i] ) )
         end
         if iterations >= nextacceleration
-            x = intermediates[end-2:end]
-            y = diff(x)
-            ratio = y[1]./y[2]
-            if any(ratio .< 0)
-                if debug >= 2
-                    println( "Acceleration failed due to oscillations" )
-                end
-            else
-                gamma = -log.(ratio)
-                beta = y[1]./(1 .- exp.(-gamma))
-                alpha = x[3] - beta
-
-                t = accelerationlinestart
+            y = hcat( intermediates[end-observations+1:end]... )'
+            t = -collect(reverse(0:observations-1))
+            X = [ones(observations) t t.^2]
+            beta = inv(X'*X)*X'*y
+            
+            t = accelerationlinestart
                 
-                # let's bound t to where the probabilities go <0 or >1
-                m = length(hmms[3-i].initialprobabilities)
-                for j = 1:m^2
-                    if (gamma[j] > 0 && alpha[j] < 0) || (gamma[j] < 0 && beta[j] < 0)
-                        if alpha[j] + beta[j] <= 0
-                            warn( "Alpha + beta too small; not bounding t in acceleration!" )
-                        else
-                            t = min( t, timefractiontowardszero * -log(-alpha[j]/beta[j])/gamma[j] )
-                        end
-                    elseif (gamma[j] > 0 && alpha[j] > 1) || (gamma[j] < 0 && beta[j] > 0)
-                        if alpha[j] + beta[j] >= 1
-                            warn( "Alpha + beta too big; not bounding t in acceleration!" )
-                        else
-                            t = min( t, timefractiontowardszero * -log((1-alpha[j])/beta[j])/gamma[j] )
+            # let's bound t to where the probabilities go <0 or >1
+            m = length(hmms[3-i].initialprobabilities)
+            for j = 1:m^2
+                (c,b,a) = beta[:,j]
+
+                for target=0:1
+                    discriminant = b^2 - 4 * a * (c - target) * timefractiontowardszero
+                    if discriminant >= 0
+                        srd = sqrt(discriminant)
+                        roots = (-b .+ [-srd,srd])/(2*a)
+                        roots = roots[roots .> 0]
+                        if !isempty(roots)
+                            t = min( t, minimum(roots) )
                         end
                     end
                 end
+            end
 
-                    
-                newerlikelihood = 0.0
-                optimalparameters = nothing
-                optimalt = 0
-                for j = 1:accelerationmaxhalves
-                    p = alpha .+ beta .* exp.(-gamma * t)
-                    setparameters!( hmms[3-i], p )
-                    hmms[3-i].transitionprobabilities[:] = max.( hmms[3-i].transitionprobabilities, 0 )
-                    hmms[3-i].transitionprobabilities ./= sum( hmms[3-i].transitionprobabilities, dims=2 )
+            newerlikelihood = 0.0
+            optimalparameters = nothing
+            optimalt = 0
+            for j = 1:accelerationmaxhalves
+                x = [1.0, t, t^2]
+                p = x' * beta
+                p = reshape( p, length(p) )
+                setparameters!( hmms[3-i], p )
+                
+                hmms[3-i].transitionprobabilities ./= sum( hmms[3-i].transitionprobabilities, dims=2 )
 
-                    if any(hmms[3-i].stateparameters[2,:] .< 0 )
-                        continue
-                    end
-
-                    evennewerlikelihood = likelihood( hmms[3-i] )[end]
-                    if evennewerlikelihood > newerlikelihood
-                        newerlikelihood = evennewerlikelihood
-                        optimalparameters = getparameters( hmms[3-i] )
-                        optimalt = t
-                    end
-                    t = t/2
+                if any(hmms[3-i].stateparameters[2,:] .< 0 )
+                    continue
                 end
-                if newerlikelihood > newlikelihood
-                    if debug >= 2
-                        println( "Accepting acceleration with $(newerlikelihood) and t=$optimalt" )
-                    end
-                    newlikelihood = newerlikelihood
-                    i = 3-i
-                    setparameters!( hmms[i], optimalparameters )
-                    push!( intermediates, optimalparameters )
-                else
-                    if debug >= 2
-                        println( "Acceleration not accepted with $(newerlikelihood)" )
-                    end
+
+                evennewerlikelihood = likelihood( hmms[3-i] )[end]
+                if evennewerlikelihood > newerlikelihood
+                    newerlikelihood = evennewerlikelihood
+                    optimalparameters = getparameters( hmms[3-i] )
+                    optimalt = t
+                end
+                t = t/2
+            end
+            if newerlikelihood > newlikelihood
+                if debug >= 2
+                    println( "Accepting acceleration with $(newerlikelihood) and t=$optimalt" )
+                end
+                newlikelihood = newerlikelihood
+                i = 3-i
+                setparameters!( hmms[i], optimalparameters )
+                push!( intermediates, optimalparameters )
+            else
+                if debug >= 2
+                    println( "Acceleration not accepted with $(newerlikelihood)" )
                 end
             end
             nextacceleration += acceleration
