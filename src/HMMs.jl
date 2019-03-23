@@ -468,6 +468,27 @@ function stationary( hmm::HMM )
     return I[1,:]'*pinv(P)
 end
 
+function variance( hmm )
+    pi = stationary( hmm )
+    mus = hmm.stateparameters[1,:]
+    mu = dot( pi, mus )
+    result = dot(pi, (hmm.stateparameters[2,:].^2 + (mus .- mu).^2))
+    return result
+end
+
+function autocovariance( hmm, lag::Int )
+    if lag == 0
+        return variance( hmm )
+    else
+        pi = stationary( hmm )
+        P = hmm.transitionprobabilities
+        mus = hmm.stateparameters[1,:]
+        mu = dot(pi, mus)
+        jointprobabilities = pi' .* P^lag
+        sum( jointprobabilities .* ((mus .- mu) * (mus .- mu)') )
+    end
+end
+
 function forwardprobabilities( hmm::HMM{Dist,Calc,Out} ) where {Dist,Calc,Out}
     if hmm.alpha.dirty
         b = probabilities( hmm )
@@ -662,6 +683,12 @@ function basis( A::Matrix{Out}; epsilon::Out = 1e-12 ) where {Out <: Number}
     indices = abs.(S) .< epsilon
     result = V[:,indices]
     return result
+end
+
+function addconstraints( hmm::HMM{Dist,Calc,Out}, A::Matrix{Out}, b::Vector{Out} ) where {Dist,Calc,Out}
+    hmm.constraintmatrix = [hmm.constraintmatrix; A]
+    hmm.constraintvector = [hmm.constraintvector; b]
+    hmm.basis = basis( hmm.constraintmatrix )
 end
 
 dcollapse( hmm::HMM ) = hmm.basis'
@@ -961,8 +988,7 @@ function permutederror( hmm1::GaussianHMM, hmm2::GaussianHMM )
     return (transitionprobabilities=minerror, means=meanerror, stds=stderror)
 end
 
-function reorder!( hmm )
-    perm = sortperm(hmm.stateparameters[1,:])
+function applyperm!( hmm, perm )
     for i = 1:size(hmm.stateparameters,1)
         hmm.stateparameters[i,:] = hmm.stateparameters[i,perm]
     end
@@ -970,6 +996,8 @@ function reorder!( hmm )
     hmm.transitionprobabilities = hmm.transitionprobabilities[perm,perm]
     return hmm
 end
+
+reorder!( hmm ) = applyperm!( hmm, sortperm(hmm.stateparameters[1,:]) )
 
 ppv( io, s, v ) = println( io, rpad( s, 32 ), join([@sprintf("%8.2f", 100*convert(Float64,x)) for x in v]) )
 
