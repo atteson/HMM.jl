@@ -230,6 +230,26 @@ function clear( hmm::HMM )
     hmm.d2loglikelihood.dirty = true
 end
 
+function free( hmm::HMM{Dist,Calc} ) where {Dist,Calc}
+    hmm.b = DirtyMatrix{Calc}()
+    hmm.dlogb = DirtyArray{Array{Calc,3}}()
+    hmm.d2logb = DirtyArray{Array{Calc,4}}()
+    hmm.d2b = DirtyArray{Array{Calc,4}}()
+    
+    hmm.alpha = DirtyMatrix{Calc}()
+    hmm.dalpha = DirtyArray{Array{Calc,3}}()
+    hmm.d2alpha = DirtyArray{Array{Calc,4}}()
+    
+    hmm.beta = DirtyMatrix{Calc}()
+    hmm.xi = DirtyArray{Array{Calc,3}}()
+    hmm.gamma = DirtyMatrix{Calc}()
+    
+    hmm.likelihood = DirtyVector{Calc}()
+    hmm.dlikelihood = DirtyMatrix{Calc}()
+    hmm.d2likelihood = DirtyArray{Array{Calc,3}}()
+    hmm.d2loglikelihood = DirtyArray{Array{Calc,3}}()
+end
+
 function writearray( io::IO, v::Array{T,N} ) where {T,N}
     for i in size(v)
         Base.write( io, i )
@@ -292,7 +312,7 @@ function setobservations( hmm::HMM{Dist,Calc}, y::Vector{U} ) where {Dist,Calc, 
     T = length(y)
     m = length(hmm.initialprobabilities)
     
-    clear( hmm )
+    free( hmm )
     hmm.y = y
 end
 
