@@ -42,7 +42,6 @@ else
     end
 end
 
-
 #nhmm5 = HMMs.randomhmm( HMMs.fullyconnected(2), calc=Brob, seed=3 )
 #HMMs.setobservations( nhmm5, y3 );
 #HMMs.em( nhmm5, debug=2, keepintermediates=true, acceleration=10 )
@@ -141,3 +140,9 @@ C = convert( Matrix{Float64}, HMMs.sandwich( hmm4 ) )
 d2logl = HMMs.d2loglikelihood( hmm4 );
 Ihat1 = convert( Matrix{Float64}, d2logl[:,:,end]/n )
 n*C
+
+hmm5 = HMMs.randomhmm( HMMs.fullyconnected(3), dist=HMMs.GenTDist, calc=Brob, seed=1 )
+n = 1_000_000
+y3 = rand( hmm3, n );
+
+hmm4 = HMMs.randomhmm( HMMs.fullyconnected(2), dist=HMMs.GenTDist, calc=Brob, seed=2 )

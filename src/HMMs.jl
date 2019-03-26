@@ -705,7 +705,7 @@ function basis( A::Matrix{Out}; epsilon::Out = 1e-12 ) where {Out <: Number}
     return result
 end
 
-function addconstraints( hmm::HMM{Dist,Calc,Out}, A::Matrix{Out}, b::Vector{Out} ) where {Dist,Calc,Out}
+function addconstraints( hmm::HMM{Dist,Calc,Out}, A::AbstractMatrix{Out}, b::AbstractVector{Out} ) where {Dist,Calc,Out}
     hmm.constraintmatrix = [hmm.constraintmatrix; A]
     hmm.constraintvector = [hmm.constraintvector; b]
     hmm.basis = basis( hmm.constraintmatrix )
@@ -858,6 +858,7 @@ function em(
     print_level::Int = 0,
     timefractiontowardszero = 0.5,
     observations = 10,
+    finishbig = 0,
 ) where {Dist, Calc, Out, Iter <: Number}
     if acceleration < Inf
         @assert( keepintermediates )
@@ -965,6 +966,28 @@ function em(
             end
             nextacceleration += acceleration
         end
+    end
+
+    if finishbig > 0
+        bighmm = HMM{Dist,BigFloat,Out}(
+            hmm.graph,
+            hmm.initialprobabilities,
+            hmm.transitionprobabilities,
+            hmm.stateparameters,
+        )
+        setobservations( bighmm, hmm.y )
+
+        # no acceleration
+        em( bighmm,
+            epsilon=epsilon,
+            debug=debug,
+            maxiterations=finishbig,
+            max_iter=max_iter,
+            print_level=print_level,
+            )
+
+        setparameters!( hmm, getparameters( bighmm ) )
+        clear( hmm )
     end
 
     hmm.initialprobabilities = hmms[i].initialprobabilities
