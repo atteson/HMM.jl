@@ -9,6 +9,7 @@ using Printf
 using SpecialFunctions
 
 include("GenTDist.jl")
+include("NormalCubature.jl")
 
 struct Digraph
     from::Array{Int}
@@ -733,6 +734,20 @@ function sandwich( hmm::HMM{Dist,Calc} ) where {Dist,Calc}
     de = dexpand( hmm )
     result = de * inv(J) * V * inv(J) * de'
     return result
+end
+
+function testle( hmm::HMM{Dist,Calc,Out}, A::AbstractMatrix{Out}, b::AbstractVector{Out} ) where {Dist,Calc,Out}
+    dc = dcollapse( hmm )
+    C = dc*convert( Matrix{Out}, sandwich( hmm ) )*dc'
+    Adc = A * dc'
+    cov = Adc * C * Adc'
+    p = getparameters( hmm )
+    if length(b) == 1
+        return cdf( Normal(0, sqrt(cov[1])), (A * p - b)[1] )
+    else
+        @assert( "Cubature not yet implemented" )
+    end
+        
 end
 
 function conditionaljointstateprobabilities( hmm::HMM{Dist,Calc,Out} ) where {Dist,Calc,Out}

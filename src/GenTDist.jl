@@ -17,6 +17,10 @@ Base.rand( t::GenTDist, n::Int ) = t.sigma .* rand( t.t, n ) .+ t.mu
 
 Distributions.pdf( t::GenTDist, x::Float64 ) = pdf( t.t, (x - t.mu)/t.sigma)/t.sigma
 
+Distributions.mean( t::GenTDist ) = t.mu
+
+Distributions.std( t::GenTDist ) = t.sigma * sqrt(t.t.ν/(t.t.ν-2))
+
 randomparameters( ::Type{GenTDist} ) = [randn(), rand( Exponential() ), 1 + rand(Exponential())]
 
 randomparameters( ::Type{GenTDist}, n::Int ) =
