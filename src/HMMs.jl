@@ -1037,6 +1037,7 @@ function applyperm!( hmm, perm )
     end
     hmm.initialprobabilities = hmm.initialprobabilities[perm]
     hmm.transitionprobabilities = hmm.transitionprobabilities[perm,perm]
+    clear( hmm )
     return hmm
 end
 
