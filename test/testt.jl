@@ -54,4 +54,3 @@ HMMs.em( hmm2, debug=2 )
 hmm2 = HMMs.randomhmm( graph, dist=GenTDist, calc=Brob, seed=3 )
 HMMs.setobservations( hmm2, y1 );
 HMMs.em( hmm2, debug=2 )
-

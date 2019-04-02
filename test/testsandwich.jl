@@ -143,6 +143,11 @@ n*C
 
 hmm5 = HMMs.randomhmm( HMMs.fullyconnected(3), dist=HMMs.GenTDist, calc=Brob, seed=1 )
 n = 1_000_000
-y3 = rand( hmm3, n );
+y5 = rand( hmm5, n );
 
-hmm4 = HMMs.randomhmm( HMMs.fullyconnected(2), dist=HMMs.GenTDist, calc=Brob, seed=2 )
+hmm6 = HMMs.randomhmm( HMMs.fullyconnected(2), dist=HMMs.GenTDist, calc=Brob, seed=2 )
+HMMs.setobservations( hmm6, y5 );
+HMMs.em( hmm6, debug=2 )
+HMMs.em( hmm6, max_iter=10_000, debug=2 )
+
+
