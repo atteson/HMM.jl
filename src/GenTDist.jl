@@ -83,6 +83,7 @@ function fit_mle!(
     scratch::Dict{Symbol,Any};
     max_iter::Int = 3000,
     print_level::Int = 0,
+    A::AbstractMatrix
 ) where {Calc,Out}
     t = GenTDistOptimizer( x, w )
     
