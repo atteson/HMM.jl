@@ -17,6 +17,8 @@ Base.rand( t::GenTDist, n::Int ) = t.sigma .* rand( t.t, n ) .+ t.mu
 
 Distributions.pdf( t::GenTDist, x::Float64 ) = pdf( t.t, (x - t.mu)/t.sigma)/t.sigma
 
+Distributions.cdf( t::GenTDist, x::Float64 ) = cdf( t.t, (x - t.mu)/t.sigma)
+
 Distributions.mean( t::GenTDist ) = t.mu
 
 Distributions.std( t::GenTDist ) = t.sigma * sqrt(t.t.ν/(t.t.ν-2))
@@ -83,7 +85,6 @@ function fit_mle!(
     scratch::Dict{Symbol,Any};
     max_iter::Int = 3000,
     print_level::Int = 0,
-    A::AbstractMatrix
 ) where {Calc,Out}
     t = GenTDistOptimizer( x, w )
     
