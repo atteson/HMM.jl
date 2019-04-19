@@ -39,6 +39,9 @@ end
 fullyconnected( n::Int ) =
     Digraph( vcat( [collect(1:n) for i in 1:n]... ), vcat( [fill(i,n) for i in 1:n]... ) )
 
+diagonals( n::Int, offsets::AbstractVector{Int} ) =
+    Digraph( vcat( [[(i,i+j) for j in offsets if 0<i+j<=n] for i in 1:n]... ) )
+
 mutable struct DirtyArray{A <: AbstractArray}
     data::A
     dirty::Bool

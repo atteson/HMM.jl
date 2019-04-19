@@ -101,5 +101,3 @@ function fit_mle!(
     end
     parameters[:] = MathProgBase.getsolution(model)
 end
-              
-
