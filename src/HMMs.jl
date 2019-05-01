@@ -1111,4 +1111,27 @@ function draw( outputfile::String, hmm::HMM )
     rm( inputfile )
 end
 
+function initialize( hmm::HMM{Dist,Calc,Out} ) where {Dist,Calc,Out}
+    alpha = forwardprobabilities( hmm )[end,:]
+    hmm.initialprobabilities[:] = convert( Vector{Out}, alpha/sum(alpha) )
+    
+    # because the initial probabilities have changed, the forward probabilities will now change
+    # however, they will be meaningless since they will involve replaying
+    # need to consider fixing this in a future version
+    clear( hmm )
+end
+
+function roll( hmm::HMM{Dist,Calc,Out} ) where {Dist,Calc,Out}
+    hmm.initialprobabilities[:] = hmm.initialprobabilities' * hmm.transitionprobabilities
+    clear( hmm )
+end               
+
+function update( hmm::HMM{Dist,Calc,Out}, y::Out ) where {Dist,Calc,Out}
+    push!( hmm.y, y )
+    roll( hmm )
+    probabilities = [pdf( Dist( hmm.stateparameters[:,i]... ), y ) for i in 1:length(hmm.initialprobabilities)]
+    alpha = hmm.initialprobabilities .* probabilities
+    hmm.initialprobabilities[:] = alpha/sum(alpha)
+end
+
 end # module
