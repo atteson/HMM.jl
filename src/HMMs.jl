@@ -7,6 +7,7 @@ using LinearAlgebra
 using GCTools
 using Printf
 using SpecialFunctions
+using Models
 
 include("GenTDist.jl")
 include("NormalCubature.jl")
@@ -56,7 +57,7 @@ Base.copy( da::DirtyArray ) = DirtyArray( copy( da.data ), da.dirty )
 const DirtyVector{T} = DirtyArray{Vector{T}} where {T}
 const DirtyMatrix{T} = DirtyArray{Matrix{T}} where {T}
 
-mutable struct HMM{Dist <: Distribution, Calc <: Real, Out <: Real}
+mutable struct HMM{Dist <: Distribution, Calc <: Real, Out <: Real} <: Models.AbstractModel
     graph::Digraph
     initialprobabilities::Vector{Out}
     transitionprobabilities::Matrix{Out}
@@ -1111,7 +1112,7 @@ function draw( outputfile::String, hmm::HMM )
     rm( inputfile )
 end
 
-function initialize( hmm::HMM{Dist,Calc,Out} ) where {Dist,Calc,Out}
+function Models.initialize( hmm::HMM{Dist,Calc,Out} ) where {Dist,Calc,Out}
     alpha = forwardprobabilities( hmm )[end,:]
     hmm.initialprobabilities[:] = convert( Vector{Out}, alpha/sum(alpha) )
     
@@ -1121,12 +1122,12 @@ function initialize( hmm::HMM{Dist,Calc,Out} ) where {Dist,Calc,Out}
     clear( hmm )
 end
 
-function roll( hmm::HMM{Dist,Calc,Out} ) where {Dist,Calc,Out}
+function Models.roll( hmm::HMM{Dist,Calc,Out} ) where {Dist,Calc,Out}
     hmm.initialprobabilities[:] = hmm.initialprobabilities' * hmm.transitionprobabilities
     clear( hmm )
 end               
 
-function update( hmm::HMM{Dist,Calc,Out}, y::Out ) where {Dist,Calc,Out}
+function Models.update( hmm::HMM{Dist,Calc,Out}, y::Out ) where {Dist,Calc,Out}
     push!( hmm.y, y )
     roll( hmm )
     probabilities = [pdf( Dist( hmm.stateparameters[:,i]... ), y ) for i in 1:length(hmm.initialprobabilities)]
