@@ -89,6 +89,9 @@ mutable struct HMM{Dist <: Distribution, Calc <: Real, Out <: Real} <: Models.Ab
     constraintvector::Vector{Out}
     basis::Matrix{Out}
 
+    statecdfs::Matrix{Out}
+    statedists::Vector{Distribution}
+
     scratch::Dict{Symbol,Any}
 end
 
@@ -133,6 +136,9 @@ function HMM{Dist,Calc,Out}(
         A,
         ones(m),
         basis(A),
+
+        zeros(0,0),
+        Distribution[],
         
         scratch,
     )
@@ -168,6 +174,9 @@ Base.copy( hmm::HMM{Dist,Calc,Out} ) where {Dist,Calc,Out} =
         copy( hmm.constraintmatrix ),
         copy( hmm.constraintvector ),
         copy( hmm.basis ),
+
+        copy( hmm.statecdfs ),
+        copy( hmm.statedists ),
         
         copy( hmm.scratch ),
     )
@@ -201,20 +210,34 @@ function randomhmm(
     return HMM{dist,calc,out}( g, initialprobabilities, transitionprobabilities, parameters, scratch=scratch )
 end
 
-function Base.rand( hmm::HMM{Dist}, n::Int ) where {Dist}
-    cdfs = [ cumsum( hmm.transitionprobabilities[i,:] ) for i in 1:length(hmm.initialprobabilities) ]
-    
+function Distributions.rand!(
+    hmm::HMM{Dist,Calc,Out},
+    observations::AbstractVector{Out},
+    n::Int = length(observations),
+) where {Dist,Calc,Out}
+    GCTools.push!( :searchsorted )
     state = searchsorted( cumsum( hmm.initialprobabilities ), rand() ).start
-    statedists = [Dist(hmm.stateparameters[:,state]...) for state in 1:length(hmm.initialprobabilities)]
-    observations = [rand( statedists[state] )]
+    GCTools.replace!( :dists )
+    if isempty( hmm.statedists )
+        hmm.statedists = [Dist(hmm.stateparameters[:,state]...) for state in 1:length(hmm.initialprobabilities)]
+    end
+    GCTools.replace!( :rand )
+    observations[1] = rand( hmm.statedists[state] )
+
+    GCTools.replace!( :cdfs )
+    if isempty(hmm.statecdfs)
+        hmm.statecdfs = hcat( [ cumsum( hmm.transitionprobabilities[i,:] ) for i in 1:length(hmm.initialprobabilities) ]... )'
+    end
     
     for t = 2:n
-        state = searchsorted( cdfs[state], rand() ).start
-        push!( observations, rand( statedists[state] ) )
+        GCTools.replace!( :searchsorted )
+        state = searchsorted( hmm.statecdfs[state,:], rand() ).start
+        GCTools.replace!( :rand )
+        observations[t] = rand( hmm.statedists[state] )
     end
-    return observations
+    GCTools.pop!()
 end
-
+    
 function clear( hmm::HMM )
     hmm.b.dirty = true
     hmm.dlogb.dirty = true
