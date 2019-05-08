@@ -215,6 +215,8 @@ function Distributions.rand!(
     observations::AbstractVector{Out},
     n::Int = length(observations),
 ) where {Dist,Calc,Out}
+    isempty(observations) && return nothing
+    
     GCTools.push!( :searchsorted )
     state = searchsorted( cumsum( hmm.initialprobabilities ), rand() ).start
     GCTools.replace!( :dists )
