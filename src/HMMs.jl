@@ -333,7 +333,7 @@ function probabilities( hmm::HMM{N,Dist,Calc} ) where {N,Dist,Calc}
     return hmm.b.data
 end
 
-function dlogprobabilities( hmm::GaussianHMM{Calc} ) where {Calc}
+function dlogprobabilities( hmm::GaussianHMM{N,Calc} ) where {N,Calc}
     if hmm.dlogb.dirty
         b = probabilities( hmm )
         (T,m) = size(b)

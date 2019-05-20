@@ -80,7 +80,8 @@ function testfd( hmm, parameter, f, df; delta = 1e-6, epsilon = 1e-4, relative=f
     @assert( max < epsilon )
 end
 
-hmm4 = HMMs.randomhmm( hmm1.graph, calc=Brob, seed=2 )
+Random.seed!(2)
+hmm4 = rand( HMMs.HMM{2,Normal,Brob,Float64} )
 HMMs.setobservations( hmm4, y2 );
 
 b = copy( HMMs.probabilities( hmm4 ) );
@@ -153,69 +154,37 @@ close(file)
 rm(name)
 fields = [:initialprobabilities, :transitionprobabilities, :stateparameters]
 @assert( all([==( getfield.( [hmm4,hmm4a], field )... ) for field in fields]) )
-@assert( all([==( getfield.( [hmm4.graph,hmm4a.graph], field )... ) for field in [:from,:to]]) )
 
-hmm5 = HMMs.randomhmm( HMMs.fullyconnected(3), calc=Brob, seed=1 )
+Random.seed!(1)
+hmm5 = HMMs.rand( HMMs.HMM{3,Normal,Brob,Float64} )
 y3 = rand( hmm5, 100000 );
-hmm6 = HMMs.randomhmm( HMMs.fullyconnected(3), calc=Brob, seed=2 )
+Random.seed!(2)
+hmm6 = HMMs.rand( HMMs.HMM{3,Normal,Brob,Float64} )
 HMMs.setobservations( hmm6, y3 );
 @time HMMs.em( hmm6, debug=2, maxiterations=100 )
 
-graph = HMMs.Digraph( [(1,1),(1,2),(2,2),(2,3),(3,3),(3,1)] )
-hmm6 = HMMs.randomhmm( graph, calc=Brob, seed=1 )
-y4 = rand( hmm6, 100_000 );
-hmm7 = HMMs.randomhmm( HMMs.fullyconnected(3), calc=Brob, seed=4 )
-HMMs.setobservations( hmm7, y4 );
-@time HMMs.em( hmm7, debug=2 )
-HMMs.reorder!(hmm7)
-HMMs.reorder!(hmm6)
-
-error = HMMs.permutederror( hmm6, hmm7 )
-@assert( error.transitionprobabilities < 1e-2 )
-@assert( error.means < 1e-2 )
-@assert( error.stds < 1e-2 )
-
-hmm8 = HMMs.randomhmm( graph, calc=Brob, seed=4 )
-HMMs.setobservations( hmm8, y4 );
-@time HMMs.em( hmm8, debug=2 )
-HMMs.reorder!(hmm8)
-HMMs.reorder!(hmm6)
-
-error = HMMs.permutederror( hmm6, hmm7 )
-@assert( error.transitionprobabilities < 1e-2 )
-@assert( error.means < 1e-2 )
-@assert( error.stds < 1e-2 )
-
-hmm9 = HMMs.randomhmm( graph, calc=Brob, seed=4 )
-hmm9.initialprobabilities = [1.0; zeros(2)]
-HMMs.setobservations( hmm9, y4 );
-@time HMMs.em( hmm9, debug=2 )
-HMMs.reorder!(hmm9)
-HMMs.reorder!(hmm6)
-
-error = HMMs.permutederror( hmm6, hmm7 )
-@assert( error.transitionprobabilities < 1e-2 )
-@assert( error.means < 1e-2 )
-@assert( error.stds < 1e-2 )
-
-graph = HMMs.fullyconnected(2)
-hmm10 = HMMs.randomhmm( graph, dist=Laplace, calc=Brob, seed=1 )
+Random.seed!(1)
+hmm10 = HMMs.rand( HMMs.HMM{2,Laplace,Brob,Float64} )
 y10 = rand( hmm10, 10_000 )
 
-hmm11 = HMMs.randomhmm( graph, dist=Laplace, calc=Brob, seed=2 )
+Random.seed!(2)
+hmm11 = HMMs.rand( HMMs.HMM{2,Laplace,Brob,Float64} )
 HMMs.setobservations( hmm11, y10 )
 HMMs.em( hmm11, debug=2 )
 
 HMMs.reorder!( hmm10 )
 HMMs.reorder!( hmm11 )
 
-hmm12 = HMMs.randomhmm( HMMs.fullyconnected(3), dist=Laplace, calc=Brob, seed=1 )
+Random.seed!(1)
+hmm12 = HMMs.rand( HMMs.HMM{3,Laplace,Brob,Float64} )
 
+Random.seed!(1)
+hmm13 = HMMs.rand( HMMs.HMM{2,HMMs.GenTDist,Brob,Float64} )
 
-hmm13 = HMMs.randomhmm( HMMs.fullyconnected(2), dist=HMMs.GenTDist, calc=Brob, seed=1 )
 y13 = rand( hmm13, 10_000 );
 
-hmm14 = HMMs.randomhmm( HMMs.fullyconnected(2), dist=HMMs.GenTDist, calc=Brob, seed=2 )
+Random.seed!(2)
+hmm14 = HMMs.rand( HMMs.HMM{2,HMMs.GenTDist,Brob,Float64} )
 HMMs.setobservations( hmm14, y13 );
 
 b = copy( HMMs.probabilities( hmm14 ) );
