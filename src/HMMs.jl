@@ -12,37 +12,6 @@ using Models
 include("GenTDist.jl")
 include("NormalCubature.jl")
 
-struct Digraph
-    from::Array{Int}
-    to::Array{Int}
-end
-
-function unzip( zipper::Vector{Tuple{Int,Int}} )
-    n = length(zipper)
-    from = fill( 0, n )
-    to = fill( 0, n )
-    for i = 1:length(zipper)
-        from[i] = zipper[i][1]
-        to[i] = zipper[i][2]
-    end
-    return (from, to)
-end
-
-Digraph( zipper::Vector{Tuple{Int,Int}} ) = Digraph( unzip( zipper )... )
-
-Base.copy( g::Digraph ) = Digraph( copy( g.from ), copy( g.to ) )
-
-function addedge( g::Digraph, from::Int, to::Int )
-    push!( g.from, from )
-    push!( g.to, to )
-end
-
-fullyconnected( n::Int ) =
-    Digraph( vcat( [collect(1:n) for i in 1:n]... ), vcat( [fill(i,n) for i in 1:n]... ) )
-
-diagonals( n::Int, offsets::AbstractVector{Int} ) =
-    Digraph( vcat( [[(i,i+j) for j in offsets if 0<i+j<=n] for i in 1:n]... ) )
-
 mutable struct DirtyArray{A <: AbstractArray}
     data::A
     dirty::Bool
@@ -57,8 +26,7 @@ Base.copy( da::DirtyArray ) = DirtyArray( copy( da.data ), da.dirty )
 const DirtyVector{T} = DirtyArray{Vector{T}} where {T}
 const DirtyMatrix{T} = DirtyArray{Matrix{T}} where {T}
 
-mutable struct HMM{Dist <: Distribution, Calc <: Real, Out <: Real} <: Models.AbstractModel
-    graph::Digraph
+mutable struct HMM{N, Dist <: Distribution, Calc <: Real, Out <: Real} <: Models.AbstractModel
     initialprobabilities::Vector{Out}
     transitionprobabilities::Matrix{Out}
     stateparameters::Matrix{Out}
@@ -95,21 +63,20 @@ mutable struct HMM{Dist <: Distribution, Calc <: Real, Out <: Real} <: Models.Ab
     scratch::Dict{Symbol,Any}
 end
 
-const GaussianHMM{Calc, Out} = HMM{Normal,Calc,Out}
-const LaplaceHMM{Calc, Out} = HMM{Laplace,Calc,Out}
+const GaussianHMM{N,Calc, Out} = HMM{N,Normal,Calc,Out}
+const LaplaceHMM{N,Calc, Out} = HMM{N,Laplace,Calc,Out}
 
-function HMM{Dist,Calc,Out}(
-    g::Digraph,
+function HMM{N,Dist,Calc,Out}(
     pi::Vector{Out},
     a::Matrix{Out},
     stateparameters::Matrix{Out};
     scratch::Dict{Symbol,Any} = Dict{Symbol,Any}(),
-) where {Dist,Calc,Out}
+) where {N,Dist,Calc,Out}
     (p,m) = size(stateparameters)
     A = [0.0 + (m!=1 && div(j-1,m)==i-1) for i in 1:m, j in 1:m^2]
     A = [A zeros(m,m*p)]
-    result = HMM{Dist,Calc,Out}(
-        g, pi, a, stateparameters,
+    result = HMM{N,Dist,Calc,Out}(
+        pi, a, stateparameters,
         
         DirtyMatrix{Calc}(),
         DirtyArray{Array{Calc,3}}(),
@@ -144,9 +111,8 @@ function HMM{Dist,Calc,Out}(
     )
 end
 
-Base.copy( hmm::HMM{Dist,Calc,Out} ) where {Dist,Calc,Out} =
-    HMM{Dist,Calc,Out}(
-        copy( hmm.graph ),
+Base.copy( hmm::HMM{N,Dist,Calc,Out} ) where {N,Dist,Calc,Out} =
+    HMM{N,Dist,Calc,Out}(
         copy( hmm.initialprobabilities ),
         copy( hmm.transitionprobabilities ),
         copy( hmm.stateparameters ),
@@ -184,37 +150,31 @@ Base.copy( hmm::HMM{Dist,Calc,Out} ) where {Dist,Calc,Out} =
 randomparameters( ::Union{Type{Normal},Type{Laplace}}, numstates::Int ) =
     [randn( 1, numstates ); randn( 1, numstates ).^2]
 
-function randomhmm(
-    g::Digraph;
-    dist::Type{T} = Normal,
-    calc::DataType = Float64,
-    out::DataType = Float64,
-    seed::Int = 1,
-) where {T <: Distribution}
-    Random.seed!( seed )
-    
-    numstates = max( maximum( g.from ), maximum( g.to ) )
-    initialprobabilities = Vector{out}(rand( numstates ))
+function Base.rand(
+    ::Type{HMM{N,T,Calc,Out}},
+) where {N, T <: Distribution, Calc <: Real, Out<:Real}
+    initialprobabilities = Vector{Out}(rand( N ))
     initialprobabilities ./= sum( initialprobabilities )
 
-    transitionprobabilities = zeros( out, numstates, numstates )
-    for i = 1:length(g.from)
-        transitionprobabilities[g.from[i], g.to[i]] = rand()
+    transitionprobabilities = zeros( Out, N, N )
+    for i = 1:N
+        for j = 1:N
+            transitionprobabilities[i,j] = rand()
+        end
     end
     transitionprobabilities ./= sum( transitionprobabilities, dims=2 )
     
-    parameters = Matrix{out}( randomparameters( dist, numstates ) )
+    parameters = Matrix{Out}( randomparameters( T, N ) )
     scratch = Dict{Symbol,Any}()
-    scratch[:seed] = seed
 
-    return HMM{dist,calc,out}( g, initialprobabilities, transitionprobabilities, parameters, scratch=scratch )
+    return HMM{N,T,Calc,Out}( initialprobabilities, transitionprobabilities, parameters, scratch=scratch )
 end
 
 function Distributions.rand!(
-    hmm::HMM{Dist,Calc,Out},
+    hmm::HMM{N,Dist,Calc,Out},
     observations::AbstractVector{Out},
     n::Int = length(observations),
-) where {Dist,Calc,Out}
+) where {N,Dist,Calc,Out}
     isempty(observations) && return nothing
     
     GCTools.push!( :searchsorted )
@@ -260,7 +220,7 @@ function clear( hmm::HMM )
     hmm.d2loglikelihood.dirty = true
 end
 
-function free( hmm::HMM{Dist,Calc} ) where {Dist,Calc}
+function free( hmm::HMM{N,Dist,Calc} ) where {N,Dist,Calc}
     hmm.b = DirtyMatrix{Calc}()
     hmm.dlogb = DirtyArray{Array{Calc,3}}()
     hmm.d2logb = DirtyArray{Array{Calc,4}}()
@@ -302,23 +262,18 @@ function readarray( io::IO, ::Type{Array{T,N}} ) where {T,N}
 end
 
 function Base.write( io::IO, hmm::HMM )
-    writearray( io, hmm.graph.from )
-    writearray( io, hmm.graph.to )
     writearray( io, hmm.initialprobabilities )
     writearray( io, hmm.transitionprobabilities )
     writearray( io, hmm.stateparameters )
     writearray( io, hmm.y )
 end
 
-function Base.read( io::IO, ::Type{HMM{Dist,Calc,Out}} ) where {Dist,Calc,Out}
-    from = readarray( io, Vector{Int} )
-    to = readarray( io, Vector{Int} )
-    graph = Digraph( from, to )
+function Base.read( io::IO, ::Type{HMM{N,Dist,Calc,Out}} ) where {N,Dist,Calc,Out}
     initialprobabilities = readarray( io, Vector{Out} )
     transitionprobabilities = readarray( io, Matrix{Out} )
     parameters = readarray( io, Matrix{Out} )
     y = readarray( io, Vector{Out} )
-    hmm = HMM{Dist,Calc,Out}( graph, initialprobabilities, transitionprobabilities, parameters )
+    hmm = HMM{N,Dist,Calc,Out}( initialprobabilities, transitionprobabilities, parameters )
     setobservations( hmm, y )
     return hmm
 end
@@ -338,7 +293,7 @@ function setparameters!( hmm::HMM{Dist,Calc,Out}, parameters::AbstractVector{Out
     clear( hmm )
 end
 
-function setobservations( hmm::HMM{Dist,Calc}, y::Vector{U} ) where {Dist,Calc, U <: Real}
+function setobservations( hmm::HMM{N,Dist,Calc}, y::Vector{U} ) where {N,Dist,Calc, U <: Real}
     T = length(y)
     m = length(hmm.initialprobabilities)
     
@@ -348,7 +303,7 @@ end
 
 observations( hmm::HMM ) = hmm.y
 
-function probabilities( hmm::HMM{Dist,Calc} ) where {Dist,Calc}
+function probabilities( hmm::HMM{N,Dist,Calc} ) where {N,Dist,Calc}
     # makes the assumption that the first parameter is location and second is scale
     if hmm.b.dirty
         y = observations( hmm )
@@ -398,7 +353,7 @@ function dlogprobabilities( hmm::GaussianHMM{Calc} ) where {Calc}
     return hmm.dlogb.data
 end
 
-function dlogprobabilities( hmm::HMM{GenTDist,Calc} ) where {Calc}
+function dlogprobabilities( hmm::HMM{N,GenTDist,Calc} ) where {N,Calc}
     if hmm.dlogb.dirty
         b = probabilities( hmm )
         (T,m) = size(b)
@@ -425,7 +380,7 @@ function dlogprobabilities( hmm::HMM{GenTDist,Calc} ) where {Calc}
     return hmm.dlogb.data
 end
 
-function d2logprobabilities( hmm::GaussianHMM{Calc} ) where {Calc}
+function d2logprobabilities( hmm::GaussianHMM{N,Calc} ) where {N,Calc}
     if hmm.d2logb.dirty
         dlogb = dlogprobabilities( hmm )
         (p,m,T) = size(dlogb)
@@ -454,7 +409,7 @@ function d2logprobabilities( hmm::GaussianHMM{Calc} ) where {Calc}
     return hmm.d2logb.data
 end
 
-function d2logprobabilities( hmm::HMM{GenTDist,Calc} ) where {Calc}
+function d2logprobabilities( hmm::HMM{N,GenTDist,Calc} ) where {N,Calc}
     if hmm.d2logb.dirty
         dlogb = dlogprobabilities( hmm )
         (p,m,T) = size(dlogb)
@@ -489,7 +444,7 @@ function d2logprobabilities( hmm::HMM{GenTDist,Calc} ) where {Calc}
     return hmm.d2logb.data
 end
 
-function d2probabilities( hmm::HMM{Dist,Calc} ) where {Dist,Calc}
+function d2probabilities( hmm::HMM{N,Dist,Calc} ) where {N,Dist,Calc}
     if hmm.d2b.dirty
         b = probabilities( hmm )
         dlogb = dlogprobabilities( hmm )
@@ -539,7 +494,7 @@ function autocovariance( hmm, lag::Int )
     end
 end
 
-function forwardprobabilities( hmm::HMM{Dist,Calc,Out} ) where {Dist,Calc,Out}
+function forwardprobabilities( hmm::HMM{N,Dist,Calc,Out} ) where {N,Dist,Calc,Out}
     if hmm.alpha.dirty
         b = probabilities( hmm )
         (T,m) = size(b)
@@ -550,10 +505,10 @@ function forwardprobabilities( hmm::HMM{Dist,Calc,Out} ) where {Dist,Calc,Out}
         hmm.alpha.data[1,:] = hmm.initialprobabilities .* b[1,:]
         hmm.alpha.data[2:T,:] = zeros( Calc, (T-1,m) )
         for i = 2:T
-            for j = 1:length(hmm.graph.from)
-                from = hmm.graph.from[j]
-                to = hmm.graph.to[j]
-                hmm.alpha.data[i,to] += hmm.transitionprobabilities[from, to] * hmm.alpha.data[i-1,from] * b[i,to]
+            for from = 1:N
+                for to = 1:N
+                    hmm.alpha.data[i,to] += hmm.transitionprobabilities[from, to] * hmm.alpha.data[i-1,from] * b[i,to]
+                end
             end
         end
         hmm.alpha.dirty = false
@@ -561,7 +516,7 @@ function forwardprobabilities( hmm::HMM{Dist,Calc,Out} ) where {Dist,Calc,Out}
     return hmm.alpha.data
 end
 
-function dforwardprobabilities( hmm::HMM{Dist,Calc,Out} ) where {Dist,Calc,Out}
+function dforwardprobabilities( hmm::HMM{N,Dist,Calc,Out} ) where {N,Dist,Calc,Out}
     if hmm.dalpha.dirty
         b = probabilities( hmm )
         dlogb = dlogprobabilities( hmm )
@@ -576,16 +531,15 @@ function dforwardprobabilities( hmm::HMM{Dist,Calc,Out} ) where {Dist,Calc,Out}
         hmm.dalpha.data[:,:,1] = hmm.initialprobabilities' .* (dlogb[:,:,1] .* b[1,:]')
         hmm.dalpha.data[:,:,2:T] = zeros( p, m, T-1 )
         for i = 2:T
-            for j = 1:length(hmm.graph.from)
-                from = hmm.graph.from[j]
-                to = hmm.graph.to[j]
+            for from = 1:N
+                for to = 1:N
+                    paramindex = (from-1)*m + to
+                    hmm.dalpha.data[paramindex,to,i] += alpha[i-1,from] * b[i,to]
                 
-                paramindex = (from-1)*m + to
-                hmm.dalpha.data[paramindex,to,i] += alpha[i-1,from] * b[i,to]
+                    hmm.dalpha.data[:,to,i] += hmm.transitionprobabilities[from, to] * hmm.dalpha.data[:,from,i-1] * b[i,to]
                 
-                hmm.dalpha.data[:,to,i] += hmm.transitionprobabilities[from, to] * hmm.dalpha.data[:,from,i-1] * b[i,to]
-                
-                hmm.dalpha.data[:,to,i] += hmm.transitionprobabilities[from, to] * alpha[i-1,from] * (dlogb[:,to,i] .* b[i,to])
+                    hmm.dalpha.data[:,to,i] += hmm.transitionprobabilities[from, to] * alpha[i-1,from] * (dlogb[:,to,i] .* b[i,to])
+                end
             end
         end
         hmm.dalpha.dirty = false
@@ -593,7 +547,7 @@ function dforwardprobabilities( hmm::HMM{Dist,Calc,Out} ) where {Dist,Calc,Out}
     return hmm.dalpha.data
 end
 
-function d2forwardprobabilities( hmm::HMM{Dist,Calc,Out} ) where {Dist,Calc,Out}
+function d2forwardprobabilities( hmm::HMM{N,Dist,Calc,Out} ) where {N,Dist,Calc,Out}
     if hmm.d2alpha.dirty
         b = probabilities( hmm )
         dlogb = dlogprobabilities( hmm )
@@ -612,27 +566,27 @@ function d2forwardprobabilities( hmm::HMM{Dist,Calc,Out} ) where {Dist,Calc,Out}
         end
         hmm.d2alpha.data[:,:,:,2:T] = zeros( p, p, m, T-1 )
         for i = 2:T
-            for j = 1:length(hmm.graph.from)
-                from = hmm.graph.from[j]
-                to = hmm.graph.to[j]
-                paramindex = (from-1)*m + to
-                
-                hmm.d2alpha.data[:,:,to,i] +=
-                    hmm.transitionprobabilities[from,to] * hmm.d2alpha.data[:,:,from,i-1] * b[i,to]
+            for from = 1:N
+                for to = 1:N
+                    paramindex = (from-1)*m + to
+                    
+                    hmm.d2alpha.data[:,:,to,i] +=
+                        hmm.transitionprobabilities[from,to] * hmm.d2alpha.data[:,:,from,i-1] * b[i,to]
 
-                hmm.d2alpha.data[paramindex,:,to,i] += dalpha[:,from,i-1] * b[i,to]
-                hmm.d2alpha.data[:,paramindex,to,i] += dalpha[:,from,i-1] * b[i,to]
+                    hmm.d2alpha.data[paramindex,:,to,i] += dalpha[:,from,i-1] * b[i,to]
+                    hmm.d2alpha.data[:,paramindex,to,i] += dalpha[:,from,i-1] * b[i,to]
 
-                hmm.d2alpha.data[paramindex,:,to,i] += alpha[i-1,from] * (dlogb[:,to,i] .* b[i,to])
-                hmm.d2alpha.data[:,paramindex,to,i] += alpha[i-1,from] * (dlogb[:,to,i] .* b[i,to])
+                    hmm.d2alpha.data[paramindex,:,to,i] += alpha[i-1,from] * (dlogb[:,to,i] .* b[i,to])
+                    hmm.d2alpha.data[:,paramindex,to,i] += alpha[i-1,from] * (dlogb[:,to,i] .* b[i,to])
 
-                # adding these together all at once preserves symmetry
-                hmm.d2alpha.data[:,:,to,i] +=
-                    dalpha[:,from,i-1] * (dlogb[:,to,i]' .* b[i,to]) * hmm.transitionprobabilities[from,to] + 
-                    (dlogb[:,to,i] .* b[i,to]) * dalpha[:,from,i-1]' * hmm.transitionprobabilities[from,to]
+                    # adding these together all at once preserves symmetry
+                    hmm.d2alpha.data[:,:,to,i] +=
+                        dalpha[:,from,i-1] * (dlogb[:,to,i]' .* b[i,to]) * hmm.transitionprobabilities[from,to] + 
+                        (dlogb[:,to,i] .* b[i,to]) * dalpha[:,from,i-1]' * hmm.transitionprobabilities[from,to]
 
-                hmm.d2alpha.data[:,:,to,i] +=
-                    alpha[i-1,from] * hmm.transitionprobabilities[from,to] * d2b[:,:,to,i]
+                    hmm.d2alpha.data[:,:,to,i] +=
+                        alpha[i-1,from] * hmm.transitionprobabilities[from,to] * d2b[:,:,to,i]
+                end
             end
         end
         hmm.d2alpha.dirty = false
@@ -640,7 +594,7 @@ function d2forwardprobabilities( hmm::HMM{Dist,Calc,Out} ) where {Dist,Calc,Out}
     return hmm.d2alpha.data
 end
 
-function backwardprobabilities( hmm::HMM{Dist,Calc, Out} ) where {Dist,Calc, Out}
+function backwardprobabilities( hmm::HMM{N,Dist,Calc, Out} ) where {N,Dist,Calc, Out}
     if hmm.beta.dirty
         b = probabilities( hmm )
         (T,m) = size(b)
@@ -651,10 +605,10 @@ function backwardprobabilities( hmm::HMM{Dist,Calc, Out} ) where {Dist,Calc, Out
         hmm.beta.data[end,:] = ones(Calc,length(hmm.initialprobabilities))
         hmm.beta.data[1:T-1,:] = zeros( Calc, (T-1,m) )
         for i = T:-1:2
-            for j = 1:length(hmm.graph.from)
-                from = hmm.graph.from[j]
-                to = hmm.graph.to[j]
-                hmm.beta.data[i-1,from] += hmm.transitionprobabilities[from,to] * hmm.beta.data[i,to] * b[i,to]
+            for from = 1:N
+                for to = 1:N
+                    hmm.beta.data[i-1,from] += hmm.transitionprobabilities[from,to] * hmm.beta.data[i,to] * b[i,to]
+                end
             end
         end
         hmm.beta.dirty = false
@@ -662,7 +616,7 @@ function backwardprobabilities( hmm::HMM{Dist,Calc, Out} ) where {Dist,Calc, Out
     return hmm.beta.data
 end
 
-function likelihood( hmm::HMM{Dist,Calc} ) where {Dist,Calc}
+function likelihood( hmm::HMM{N,Dist,Calc} ) where {N,Dist,Calc}
     if hmm.likelihood.dirty
         alpha = forwardprobabilities( hmm )
         (T,m) = size(alpha)
@@ -677,7 +631,7 @@ function likelihood( hmm::HMM{Dist,Calc} ) where {Dist,Calc}
     return hmm.likelihood.data
 end
 
-function dlikelihood( hmm::HMM{Dist,Calc} ) where {Dist,Calc}
+function dlikelihood( hmm::HMM{N,Dist,Calc} ) where {N,Dist,Calc}
     if hmm.dlikelihood.dirty
         dalpha = dforwardprobabilities( hmm )
         (p,m,T) = size(dalpha)
@@ -692,7 +646,7 @@ function dlikelihood( hmm::HMM{Dist,Calc} ) where {Dist,Calc}
     return hmm.dlikelihood.data
 end
 
-function d2likelihood( hmm::HMM{Dist,Calc} ) where {Dist,Calc}
+function d2likelihood( hmm::HMM{N,Dist,Calc} ) where {N,Dist,Calc}
     if hmm.d2likelihood.dirty
         d2alpha = d2forwardprobabilities( hmm )
         (p,p,m,T) = size(d2alpha)
@@ -707,7 +661,7 @@ function d2likelihood( hmm::HMM{Dist,Calc} ) where {Dist,Calc}
     return hmm.d2likelihood.data
 end
 
-function d2loglikelihood( hmm::HMM{Dist,Calc} ) where {Dist,Calc}
+function d2loglikelihood( hmm::HMM{N,Dist,Calc} ) where {N,Dist,Calc}
     if hmm.d2loglikelihood.dirty
         l = likelihood( hmm )
         dl = dlikelihood( hmm )
@@ -745,7 +699,7 @@ dcollapse( hmm::HMM ) = hmm.basis'
 
 dexpand( hmm::HMM ) = hmm.basis
 
-function sandwich( hmm::HMM{Dist,Calc} ) where {Dist,Calc}
+function sandwich( hmm::HMM{N,Dist,Calc} ) where {N,Dist,Calc}
     # for now, we're only going to put in the equality constraints for the simplex
 
     dc = dcollapse( hmm )
@@ -765,7 +719,7 @@ function sandwich( hmm::HMM{Dist,Calc} ) where {Dist,Calc}
     return result
 end
 
-function testle( hmm::HMM{Dist,Calc,Out}, A::AbstractMatrix{Out}, b::AbstractVector{Out} ) where {Dist,Calc,Out}
+function testle( hmm::HMM{N,Dist,Calc,Out}, A::AbstractMatrix{Out}, b::AbstractVector{Out} ) where {N,Dist,Calc,Out}
     dc = dcollapse( hmm )
     C = dc*convert( Matrix{Out}, sandwich( hmm ) )*dc'
     Adc = A * dc'
@@ -779,7 +733,7 @@ function testle( hmm::HMM{Dist,Calc,Out}, A::AbstractMatrix{Out}, b::AbstractVec
         
 end
 
-function conditionaljointstateprobabilities( hmm::HMM{Dist,Calc,Out} ) where {Dist,Calc,Out}
+function conditionaljointstateprobabilities( hmm::HMM{N,Dist,Calc,Out} ) where {N,Dist,Calc,Out}
     if hmm.xi.dirty
         alpha = forwardprobabilities( hmm )
         beta = backwardprobabilities( hmm )
@@ -793,11 +747,11 @@ function conditionaljointstateprobabilities( hmm::HMM{Dist,Calc,Out} ) where {Di
         
         hmm.xi.data[1:T-1,:,:] = zeros( Calc, (T-1,m,m) )
         for i = 1:T-1
-            for j = 1:length(hmm.graph.from)
-                from = hmm.graph.from[j]
-                to = hmm.graph.to[j]
-                hmm.xi.data[i,from,to] +=
-                    hmm.transitionprobabilities[from,to] * alpha[i,from] * beta[i+1,to] * b[i+1,to]
+            for from = 1:N
+                for to = 1:N
+                    hmm.xi.data[i,from,to] +=
+                        hmm.transitionprobabilities[from,to] * alpha[i,from] * beta[i+1,to] * b[i+1,to]
+                end
             end
         end
         hmm.xi.data[:,:,:] /= proby
@@ -807,7 +761,7 @@ function conditionaljointstateprobabilities( hmm::HMM{Dist,Calc,Out} ) where {Di
     return hmm.xi.data
 end
 
-function conditionalstateprobabilities( hmm::HMM{Dist,Calc} ) where {Dist,Calc}
+function conditionalstateprobabilities( hmm::HMM{N,Dist,Calc} ) where {N,Dist,Calc}
     if hmm.gamma.dirty
         xi = conditionaljointstateprobabilities( hmm )
         (Tm1, m, trash) = size(xi)
@@ -858,11 +812,11 @@ function fit_mle!(
 end
 
 function emstep(
-    hmm::HMM{Dist,Calc,Out},
-    nexthmm::HMM{Dist,Calc,Out};
+    hmm::HMM{N,Dist,Calc,Out},
+    nexthmm::HMM{N,Dist,Calc,Out};
     max_iter::Int = 0,
     print_level::Int = 0,
-) where {Dist,Calc,Out}
+) where {N,Dist,Calc,Out}
     y = observations( hmm )
     T = length(y)
     
@@ -890,7 +844,7 @@ function emstep(
 end
 
 function em(
-    hmm::HMM{Dist,Calc, Out};
+    hmm::HMM{N,Dist,Calc, Out};
     epsilon::Float64 = 0.0,
     debug::Int = 0,
     maxiterations::Iter = Inf,
@@ -903,7 +857,7 @@ function em(
     timefractiontowardszero = 0.5,
     observations = 10,
     finishbig = 0,
-) where {Dist, Calc, Out, Iter <: Number}
+) where {N,Dist, Calc, Out, Iter <: Number}
     if acceleration < Inf
         @assert( keepintermediates )
     end
@@ -1013,8 +967,7 @@ function em(
     end
 
     if finishbig > 0
-        bighmm = HMM{Dist,BigFloat,Out}(
-            hmm.graph,
+        bighmm = HMM{N,Dist,BigFloat,Out}(
             hmm.initialprobabilities,
             hmm.transitionprobabilities,
             hmm.stateparameters,
@@ -1089,7 +1042,7 @@ reorder!( hmm ) = applyperm!( hmm, sortperm(hmm.stateparameters[1,:]) )
 
 ppv( io, s, v ) = println( io, rpad( s, 32 ), join([@sprintf("%8.2f", 100*convert(Float64,x)) for x in v]) )
 
-function Base.show( io::IO, hmm::HMM{T} ) where {T <: Union{Normal,Laplace}}
+function Base.show( io::IO, hmm::HMM{N,T} ) where {N,T <: Union{Normal,Laplace}}
     println( io )
     ppv( io, "initial probabilities:", hmm.initialprobabilities )
     println( io )
@@ -1102,7 +1055,7 @@ function Base.show( io::IO, hmm::HMM{T} ) where {T <: Union{Normal,Laplace}}
     ppv( io, "scales:", hmm.stateparameters[2,:] )
 end
 
-function Base.show( io::IO, hmm::HMM{GenTDist} )
+function Base.show( io::IO, hmm::HMM{N,GenTDist} ) where {N}
     println( io )
     ppv( io, "initial probabilities:", hmm.initialprobabilities )
     println( io )
@@ -1137,7 +1090,7 @@ function draw( outputfile::String, hmm::HMM )
     rm( inputfile )
 end
 
-function Models.initialize( hmm::HMM{Dist,Calc,Out} ) where {Dist,Calc,Out}
+function Models.initialize( hmm::HMM{N,Dist,Calc,Out} ) where {N,Dist,Calc,Out}
     alpha = forwardprobabilities( hmm )[end,:]
     hmm.initialprobabilities[:] = convert( Vector{Out}, alpha/sum(alpha) )
     
@@ -1147,12 +1100,7 @@ function Models.initialize( hmm::HMM{Dist,Calc,Out} ) where {Dist,Calc,Out}
     clear( hmm )
 end
 
-function Models.roll( hmm::HMM{Dist,Calc,Out} ) where {Dist,Calc,Out}
-    hmm.initialprobabilities[:] = hmm.initialprobabilities' * hmm.transitionprobabilities
-    clear( hmm )
-end               
-
-function Models.update( hmm::HMM{Dist,Calc,Out}, y::Out ) where {Dist,Calc,Out}
+function Models.update( hmm::HMM{N,Dist,Calc,Out}, y::Out ) where {N,Dist,Calc,Out}
     push!( hmm.y, y )
     roll( hmm )
     probabilities = [pdf( Dist( hmm.stateparameters[:,i]... ), y ) for i in 1:length(hmm.initialprobabilities)]

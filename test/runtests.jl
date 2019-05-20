@@ -17,7 +17,8 @@ rm(name)
 
 N = 2
 T = 1000
-hmm1 = HMMs.randomhmm( HMMs.fullyconnected( N ), calc=BigFloat );
+Random.seed!(1)
+hmm1 = HMMs.rand( HMMs.HMM{N,Normal,BigFloat,Float64} )
 y1 = rand( hmm1, T );
 HMMs.setobservations( hmm1, y1 );
 alpha = HMMs.forwardprobabilities( hmm1 );
@@ -37,7 +38,8 @@ hmm2 = copy( hmm1 );
 @time HMMs.emstep( hmm1, hmm2 )
 @assert( maximum(abs.( sum(hmm2.transitionprobabilities,dims=2) .- 1 )) < 1e-8 )
 
-hmm3 = HMMs.randomhmm( hmm1.graph, calc=BigFloat, seed=2 )
+Random.seed!(2)
+hmm3 = HMMs.rand( HMMs.HMM{2,Normal,BigFloat,Float64} )
 y2 = rand( hmm1, 100000 );
 HMMs.setobservations( hmm3, y2 );
 @time HMMs.em( hmm3, debug=2 )
