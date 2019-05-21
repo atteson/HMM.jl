@@ -26,7 +26,7 @@ Base.copy( da::DirtyArray ) = DirtyArray( copy( da.data ), da.dirty )
 const DirtyVector{T} = DirtyArray{Vector{T}} where {T}
 const DirtyMatrix{T} = DirtyArray{Matrix{T}} where {T}
 
-mutable struct HMM{N, Dist <: Distribution, Calc <: Real, Out <: Real} <: Models.AbstractModel
+mutable struct HMM{N, Dist <: Distribution, Calc <: Real, Out <: Real} <: Models.AbstractModel{Out}
     initialprobabilities::Vector{Out}
     transitionprobabilities::Matrix{Out}
     stateparameters::Matrix{Out}
@@ -1099,6 +1099,11 @@ function Models.initialize( hmm::HMM{N,Dist,Calc,Out} ) where {N,Dist,Calc,Out}
     # need to consider fixing this in a future version
     clear( hmm )
 end
+
+function roll( hmm::HMM{N,Dist,Calc,Out} ) where {N,Dist,Calc,Out}
+    hmm.initialprobabilities[:] = hmm.initialprobabilities' * hmm.transitionprobabilities
+    clear( hmm )
+end               
 
 function Models.update( hmm::HMM{N,Dist,Calc,Out}, y::Out ) where {N,Dist,Calc,Out}
     push!( hmm.y, y )
