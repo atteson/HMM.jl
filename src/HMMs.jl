@@ -1002,6 +1002,7 @@ function em(
         println( "Final likelihood = $(HMMs.likelihood(hmm)[end]); iterations = $iterations, time = $(hmm.scratch[:time])" )
         flush(stdout)
     end
+    return hmm
 end
 
 time( hmm::HMM ) = hmm.scratch[:time]
