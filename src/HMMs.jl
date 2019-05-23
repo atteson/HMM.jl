@@ -111,7 +111,7 @@ function HMM{N,Dist,Calc,Out}(
     )
 end
 
-Base.copy( hmm::HMM{N,Dist,Calc,Out} ) where {N,Dist,Calc,Out} =
+Base.deepcopy( hmm::HMM{N,Dist,Calc,Out} ) where {N,Dist,Calc,Out} =
     HMM{N,Dist,Calc,Out}(
         copy( hmm.initialprobabilities ),
         copy( hmm.transitionprobabilities ),
@@ -863,7 +863,7 @@ function em(
     end
     
     t0 = Base.time()
-    nexthmm = copy( hmm )
+    nexthmm = deepcopy( hmm )
     hmms = [hmm, nexthmm]
     oldlikelihood = zero(Calc)
     newlikelihood = likelihood( hmm )[end]
@@ -1108,6 +1108,7 @@ end
 
 function Models.update( hmm::HMM{N,Dist,Calc,Out}, y::Out ) where {N,Dist,Calc,Out}
     push!( hmm.y, y )
+    free( hmm )
     roll( hmm )
     probabilities = [pdf( Dist( hmm.stateparameters[:,i]... ), y ) for i in 1:length(hmm.initialprobabilities)]
     alpha = hmm.initialprobabilities .* probabilities
