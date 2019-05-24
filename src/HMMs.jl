@@ -4,7 +4,6 @@ using Distributions
 using Random
 using Combinatorics
 using LinearAlgebra
-using GCTools
 using Printf
 using SpecialFunctions
 using Models
@@ -30,6 +29,8 @@ mutable struct HMM{N, Dist <: Distribution, Calc <: Real, Out <: Real} <: Models
     initialprobabilities::Vector{Out}
     transitionprobabilities::Matrix{Out}
     stateparameters::Matrix{Out}
+
+    currentprobabilities::Vector{Out}
 
     b::DirtyMatrix{Calc}
     dlogb::DirtyArray{Array{Calc,3}}
@@ -77,6 +78,8 @@ function HMM{N,Dist,Calc,Out}(
     A = [A zeros(m,m*p)]
     result = HMM{N,Dist,Calc,Out}(
         pi, a, stateparameters,
+
+        copy(pi),
         
         DirtyMatrix{Calc}(),
         DirtyArray{Array{Calc,3}}(),
@@ -116,6 +119,8 @@ Base.deepcopy( hmm::HMM{N,Dist,Calc,Out} ) where {N,Dist,Calc,Out} =
         copy( hmm.initialprobabilities ),
         copy( hmm.transitionprobabilities ),
         copy( hmm.stateparameters ),
+        
+        copy( hmm.currentprobabilities ),
         
         copy( hmm.b ),
         copy( hmm.dlogb ),
@@ -177,27 +182,20 @@ function Distributions.rand!(
 ) where {N,Dist,Calc,Out}
     isempty(observations) && return nothing
     
-    GCTools.push!( :searchsorted )
-    state = searchsorted( cumsum( hmm.initialprobabilities ), rand() ).start
-    GCTools.replace!( :dists )
+    state = searchsorted( cumsum( hmm.currentprobabilities ), rand() ).start
     if isempty( hmm.statedists )
         hmm.statedists = [Dist(hmm.stateparameters[:,state]...) for state in 1:length(hmm.initialprobabilities)]
     end
-    GCTools.replace!( :rand )
     observations[1] = rand( hmm.statedists[state] )
 
-    GCTools.replace!( :cdfs )
     if isempty(hmm.statecdfs)
         hmm.statecdfs = hcat( [ cumsum( hmm.transitionprobabilities[i,:] ) for i in 1:length(hmm.initialprobabilities) ]... )'
     end
     
     for t = 2:n
-        GCTools.replace!( :searchsorted )
         state = searchsorted( hmm.statecdfs[state,:], rand() ).start
-        GCTools.replace!( :rand )
         observations[t] = rand( hmm.statedists[state] )
     end
-    GCTools.pop!()
 end
     
 function clear( hmm::HMM )
@@ -997,11 +995,16 @@ function em(
     if keepintermediates
         hmm.scratch[:intermediates] = intermediates
     end
-    
+
     if debug >= 1
         println( "Final likelihood = $(HMMs.likelihood(hmm)[end]); iterations = $iterations, time = $(hmm.scratch[:time])" )
         flush(stdout)
     end
+
+    # the Model infrastructure requires this
+    alpha = hmm.alpha.data[end,:]
+    hmm.currentprobabilities = convert( Vector{Out}, alpha./sum(alpha) )
+
     return hmm
 end
 
@@ -1102,7 +1105,7 @@ function Models.initialize( hmm::HMM{N,Dist,Calc,Out} ) where {N,Dist,Calc,Out}
 end
 
 function roll( hmm::HMM{N,Dist,Calc,Out} ) where {N,Dist,Calc,Out}
-    hmm.initialprobabilities[:] = hmm.initialprobabilities' * hmm.transitionprobabilities
+    hmm.currentprobabilities[:] = hmm.currentprobabilities' * hmm.transitionprobabilities
     clear( hmm )
 end               
 
@@ -1111,8 +1114,8 @@ function Models.update( hmm::HMM{N,Dist,Calc,Out}, y::Out ) where {N,Dist,Calc,O
     free( hmm )
     roll( hmm )
     probabilities = [pdf( Dist( hmm.stateparameters[:,i]... ), y ) for i in 1:length(hmm.initialprobabilities)]
-    alpha = hmm.initialprobabilities .* probabilities
-    hmm.initialprobabilities[:] = alpha/sum(alpha)
+    alpha = hmm.currentprobabilities .* probabilities
+    hmm.currentprobabilities[:] = alpha/sum(alpha)
 end
 
 end # module
