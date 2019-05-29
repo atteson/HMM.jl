@@ -7,6 +7,7 @@ using LinearAlgebra
 using Printf
 using SpecialFunctions
 using Models
+using Random
 
 include("GenTDist.jl")
 include("NormalCubature.jl")
@@ -156,8 +157,12 @@ randomparameters( ::Union{Type{Normal},Type{Laplace}}, numstates::Int ) =
     [randn( 1, numstates ); randn( 1, numstates ).^2]
 
 function Base.rand(
-    ::Type{HMM{N,T,Calc,Out}},
+    ::Type{HMM{N,T,Calc,Out}};
+    seed::Int = -1,
 ) where {N, T <: Distribution, Calc <: Real, Out<:Real}
+    if seed >= 0
+        Random.seed!( seed )
+    end
     initialprobabilities = Vector{Out}(rand( N ))
     initialprobabilities ./= sum( initialprobabilities )
 
@@ -173,6 +178,28 @@ function Base.rand(
     scratch = Dict{Symbol,Any}()
 
     return HMM{N,T,Calc,Out}( initialprobabilities, transitionprobabilities, parameters, scratch=scratch )
+end
+
+function Distributions.rand!(
+    hmm::HMM{N,T,Calc,Out};
+    seed::Int = -1,
+) where {N, T <: Distribution, Calc <: Real, Out<:Real}
+    if seed >= 0
+        Random.seed!( seed )
+    end
+    hmm.initialprobabilities[:] = Vector{Out}(rand( N ))
+    hmm.initialprobabilities[:] ./= sum( initialprobabilities )
+
+    hmm.transitionprobabilities[:] = zeros( Out, N, N )
+    for i = 1:N
+        for j = 1:N
+            hmm.transitionprobabilities[i,j] = rand()
+        end
+    end
+    transitionprobabilities[:,:] ./= sum( transitionprobabilities, dims=2 )
+    
+    hmm.stateparameters[:,:] = randomparameters( T, N )
+    return hmm
 end
 
 function Distributions.rand!(
