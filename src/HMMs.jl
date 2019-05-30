@@ -8,6 +8,7 @@ using Printf
 using SpecialFunctions
 using Models
 using Random
+using Dependencies
 
 include("GenTDist.jl")
 include("NormalCubature.jl")
@@ -1144,5 +1145,7 @@ function Models.update( hmm::HMM{N,Dist,Calc,Out}, y::Out ) where {N,Dist,Calc,O
     alpha = hmm.currentprobabilities .* probabilities
     hmm.currentprobabilities[:] = alpha/sum(alpha)
 end
+
+Dependencies.compress( hmm::HMM{N,Dist,Calc,Out} ) where {N,Dist,Calc,Out} = free( hmm )
 
 end # module
