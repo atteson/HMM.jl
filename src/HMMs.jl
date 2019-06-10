@@ -1148,4 +1148,6 @@ end
 
 Dependencies.compress( hmm::HMM{N,Dist,Calc,Out} ) where {N,Dist,Calc,Out} = free( hmm )
 
+Models.state( hmm::HMM{N,Dist,Calc,Out} ) where {N,Dist,Calc,Out} = hmm.currentprobabilities
+
 end # module
