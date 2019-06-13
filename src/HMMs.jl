@@ -1032,6 +1032,8 @@ function em(
     # the Model infrastructure requires this
     alpha = hmm.alpha.data[end,:]
     hmm.currentprobabilities = convert( Vector{Out}, alpha./sum(alpha) )
+    reorder!( hmm )
+    clear( hmm )
 
     return hmm
 end
