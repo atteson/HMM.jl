@@ -1125,13 +1125,7 @@ function draw( outputfile::String, hmm::HMM )
 end
 
 function Models.initialize( hmm::HMM{N,Dist,Calc,Out} ) where {N,Dist,Calc,Out}
-    alpha = forwardprobabilities( hmm )[end,:]
-    hmm.initialprobabilities[:] = convert( Vector{Out}, alpha/sum(alpha) )
-    
-    # because the initial probabilities have changed, the forward probabilities will now change
-    # however, they will be meaningless since they will involve replaying
-    # need to consider fixing this in a future version
-    clear( hmm )
+    hmm.currentprobabilities[:] = hmm.initialprobabilities
 end
 
 function roll( hmm::HMM{N,Dist,Calc,Out} ) where {N,Dist,Calc,Out}
@@ -1151,5 +1145,7 @@ end
 Dependencies.compress( hmm::HMM{N,Dist,Calc,Out} ) where {N,Dist,Calc,Out} = free( hmm )
 
 Models.state( hmm::HMM{N,Dist,Calc,Out} ) where {N,Dist,Calc,Out} = hmm.currentprobabilities
+
+Models.rootmodel( hmm::HMM{N,Dist,Calc,Out} ) where {N,Dist,Calc,Out} = hmm
 
 end # module
