@@ -728,7 +728,7 @@ dcollapse( hmm::HMM ) = hmm.basis'
 
 dexpand( hmm::HMM ) = hmm.basis
 
-function sandwich( hmm::HMM{N,Dist,Calc,Out,T} ) where {N,Dist,Calc,Out,T}
+function Models.sandwich( hmm::HMM{N,Dist,Calc,Out,T} ) where {N,Dist,Calc,Out,T}
     # for now, we're only going to put in the equality constraints for the simplex
 
     dc = dcollapse( hmm )
