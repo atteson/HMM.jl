@@ -557,7 +557,7 @@ function dforwardprobabilities( hmm::HMM{N,Dist,Calc,Out,T} ) where {N,Dist,Calc
         end
         
         hmm.dalpha.data[:,:,1] = hmm.initialprobabilities' .* (dlogb[:,:,1] .* b[1,:]')
-        hmm.dalpha.data[:,:,2:T] = zeros( p, m, T-1 )
+        hmm.dalpha.data[:,:,2:t] = zeros( p, m, t-1 )
         for i = 2:t
             for from = 1:N
                 for to = 1:N
@@ -593,7 +593,7 @@ function d2forwardprobabilities( hmm::HMM{N,Dist,Calc,Out,T} ) where {N,Dist,Cal
         for i = 1:m
             hmm.d2alpha.data[:,:,i,1] = hmm.initialprobabilities[i] .* d2b[:,:,i,1]
         end
-        hmm.d2alpha.data[:,:,:,2:T] = zeros( p, p, m, T-1 )
+        hmm.d2alpha.data[:,:,:,2:t] = zeros( p, p, m, t-1 )
         for i = 2:t
             for from = 1:N
                 for to = 1:N
@@ -745,7 +745,7 @@ function Models.sandwich( hmm::HMM{N,Dist,Calc,Out,T} ) where {N,Dist,Calc,Out,T
     
     de = dexpand( hmm )
     result = de * inv(J) * V * inv(J) * de'
-    return result
+    return (result + result')/2
 end
 
 function testle( hmm::HMM{N,Dist,Calc,Out,T}, A::AbstractMatrix{Out}, b::AbstractVector{Out} ) where {N,Dist,Calc,Out,T}
