@@ -1129,7 +1129,7 @@ end
 
 Models.initializationcount( ::Type{HMM{N,Dist,Calc,Out,T}} ) where {N,Dist,Calc,Out,T} = 0
 
-function Models.initialize( hmm::HMM{N,Dist,Calc,Out,T} ) where {N,Dist,Calc,Out,T}
+function Models.initialize( hmm::HMM{N,Dist,Calc,Out,T}, args... ) where {N,Dist,Calc,Out,T}
     hmm.currentprobabilities[:] = hmm.initialprobabilities
     free( hmm )
 end
