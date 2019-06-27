@@ -157,7 +157,7 @@ Base.deepcopy( hmm::HMM{N,Dist,Calc,Out,T} ) where {N,Dist,Calc,Out,T} =
 randomparameters( ::Union{Type{Normal},Type{Laplace}}, numstates::Int ) =
     [randn( 1, numstates ); randn( 1, numstates ).^2]
 
-function Base.rand(
+function Models.rand(
     ::Type{HMM{N,D,Calc,Out,T}};
     seed::Int = -1,
 ) where {N, D <: Distribution, Calc <: Real, Out<:Real, T}
@@ -1127,8 +1127,11 @@ function draw( outputfile::String, hmm::HMM )
     rm( inputfile )
 end
 
+Models.initializationcount( ::Type{HMM{N,Dist,Calc,Out,T}} ) where {N,Dist,Calc,Out,T} = 0
+
 function Models.initialize( hmm::HMM{N,Dist,Calc,Out,T} ) where {N,Dist,Calc,Out,T}
     hmm.currentprobabilities[:] = hmm.initialprobabilities
+    free( hmm )
 end
 
 function roll( hmm::HMM{N,Dist,Calc,Out,T} ) where {N,Dist,Calc,Out,T}
