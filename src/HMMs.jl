@@ -745,7 +745,7 @@ function Models.sandwich( hmm::HMM{N,Dist,Calc,Out,T} ) where {N,Dist,Calc,Out,T
     
     de = dexpand( hmm )
     result = de * inv(J) * V * inv(J) * de'
-    return (result + result')/2
+    return Matrix{Float64}((result + result')/2)
 end
 
 function testle( hmm::HMM{N,Dist,Calc,Out,T}, A::AbstractMatrix{Out}, b::AbstractVector{Out} ) where {N,Dist,Calc,Out,T}
