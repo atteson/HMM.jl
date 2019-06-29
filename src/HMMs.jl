@@ -76,7 +76,7 @@ function HMM{N,Dist,Calc,Out,T}(
     scratch::Dict{Symbol,Any} = Dict{Symbol,Any}(),
 ) where {N,Dist,Calc,Out,T}
     (p,m) = size(stateparameters)
-    A = [0.0 + (m!=1 && div(j-1,m)==i-1) for i in 1:m, j in 1:m^2]
+    A = [0.0 + (m==1 || div(j-1,m)==i-1) for i in 1:m, j in 1:m^2]
     A = [A zeros(m,m*p)]
     result = HMM{N,Dist,Calc,Out,T}(
         pi, a, stateparameters,
@@ -206,7 +206,8 @@ end
 function Distributions.rand!(
     hmm::HMM{N,Dist,Calc,Out,T},
     observations::AbstractVector{Out},
-    n::Int = length(observations),
+    n::Int = length(observations);
+    seed::Int = 1,
 ) where {N,Dist,Calc,Out,T}
     isempty(observations) && return nothing
     
@@ -226,8 +227,9 @@ function Distributions.rand!(
     end
 end
 
-Distributions.rand!( hmm::HMM{N,Dist,Calc,Out,T}, t::AbstractVector{T}, u::AbstractVector{Out} ) where {N,Dist,Calc,Out,T} =
-    rand!( hmm, u )
+Distributions.rand!( hmm::HMM{N,Dist,Calc,Out,T}, t::AbstractVector{T}, u::AbstractVector{Out};
+                     kwargs... ) where {N,Dist,Calc,Out,T} =
+                         rand!( hmm, u; kwargs... )
     
 function clear( hmm::HMM )
     hmm.b.dirty = true
@@ -744,13 +746,13 @@ function Models.sandwich( hmm::HMM{N,Dist,Calc,Out,T} ) where {N,Dist,Calc,Out,T
     J = dc * d2loglikelihood( hmm )[:,:,end] * dc'
     
     de = dexpand( hmm )
-    result = de * inv(J) * V * inv(J) * de'
-    return Matrix{Float64}((result + result')/2)
+    result = inv(J) * V * inv(J)
+    return Matrix{Out}((result + result')/2)
 end
 
 function testle( hmm::HMM{N,Dist,Calc,Out,T}, A::AbstractMatrix{Out}, b::AbstractVector{Out} ) where {N,Dist,Calc,Out,T}
     dc = dcollapse( hmm )
-    C = dc*convert( Matrix{Out}, sandwich( hmm ) )*dc'
+    C = convert( Matrix{Out}, sandwich( hmm ) )
     Adc = A * dc'
     cov = Adc * C * Adc'
     p = getparameters( hmm )
@@ -1154,7 +1156,8 @@ Models.state( hmm::HMM{N,Dist,Calc,Out,T} ) where {N,Dist,Calc,Out,T} = hmm.curr
 
 Models.rootmodel( hmm::HMM{N,Dist,Calc,Out,T} ) where {N,Dist,Calc,Out,T} = hmm
 
-Models.getcompressedparameters( hmm::HMM{N,Dist,Calc,Out,T} ) where {N,Dist,Calc,Out,T} = hmm.basis * getparameters( hmm )
+Models.getcompressedparameters( hmm::HMM{N,Dist,Calc,Out,T} ) where {N,Dist,Calc,Out,T} =
+    hmm.basis' * getparameters( hmm )
 
 function Models.setcompressedparameters!( hmm::HMM{N,Dist,Calc,Out,T}, p::AbstractVector{Float64} ) where {N,Dist,Calc,Out,T}
 end

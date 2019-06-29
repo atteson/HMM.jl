@@ -1,153 +1,48 @@
-using HMMs
-using Brobdingnag
-using SpecialFunctions
-using Random
+using Distributed
 
-nhmm1 = HMMs.randomhmm( HMMs.fullyconnected(1), calc=Brob, seed=2 )
-n = 1_000_000
-y1 = rand( nhmm1, n );
+workers = addprocs(20)
 
-nhmm2 = copy( nhmm1 )
-HMMs.setobservations( nhmm2, y1 );
-HMMs.em( nhmm2, debug=2 )
-
-C = convert( Matrix{Float64}, HMMs.sandwich( nhmm2 ) )
-d2logl = HMMs.d2loglikelihood( nhmm2 );
-d2logb = HMMs.d2logprobabilities( nhmm2 );
-Ihat1 = inv(-convert( Matrix{Float64}, d2logl[2:3,2:3,end] )/n)
-Ihat2 = inv(-convert( Matrix{Float64}, sum( d2logb[2:3,2:3,1,1:end], dims=3 )[:,:,1,1] )/n)
-@assert( maximum(abs.(Ihat1 - n*C[2:3,2:3])) < 0.01 )
-@assert( maximum(abs.(Ihat2 - n*C[2:3,2:3])) < 0.01 )
-sigma = nhmm2.stateparameters[2,1]
-@assert( maximum(abs.(inv([1/sigma^2 0.0; 0.0 2/sigma^2]) - n*C[2:3,2:3])) < 0.01 )
-
-nhmm3 = HMMs.randomhmm( HMMs.fullyconnected(2), calc=Brob, seed=2 )
-n = 1_000_000
-y3 = rand( nhmm3, n );
-
-pathname = joinpath( homedir(), "experiments", "test", "nhmms2" )
-filename = joinpath( pathname, "hmm2.2" )
-if !isfile( filename )
-    nhmm4 = copy( nhmm3 )
-    HMMs.setobservations( nhmm4, y3 );
-    HMMs.em( nhmm4, debug=2, keepintermediates=true, acceleration=10 )
-
-    mkpath( pathname )
-    open( filename, "w" ) do file
-        HMMs.write( file, nhmm4 )
-    end
-else
-    nhmm4 = open( filename, "r" ) do file
-        read( file, HMMs.GaussianHMM{Brob, Float64} )
-    end
+@everywhere begin
+    using HMMs
+    using Brobdingnag
+    using SpecialFunctions
+    using Random
+    using Distributed
+    using Models
 end
 
-#nhmm5 = HMMs.randomhmm( HMMs.fullyconnected(2), calc=Brob, seed=3 )
-#HMMs.setobservations( nhmm5, y3 );
-#HMMs.em( nhmm5, debug=2, keepintermediates=true, acceleration=10 )
-#HMMs.em( nhmm5, debug=2 )
+@everywhere function fithmm( n, nhmm, seed )
+    y = rand( nhmm, 1:n, seed=seed  );
+    hmm = deepcopy( nhmm )
+    HMMs.setobservations( hmm, y )
+    HMMs.em( hmm, debug=2 )
+    p = Models.getcompressedparameters( hmm )
+    C = Models.sandwich( hmm )
+    return (p, C)
+end
 
-#filename = joinpath( pathname, "hmm2.3" )
-#open( filename, "w" ) do file
-#    HMMs.write( file, nhmm4 )
-#end
+hmmtype = HMMs.HMM{1,HMMs.GenTDist,Brob,Float64,Int}
+nhmm = rand( hmmtype )
+n = 1_000_000
 
-C = convert( Matrix{Float64}, HMMs.sandwich( nhmm4 ) )
-l = HMMs.likelihood( nhmm4 );
-
-dc = HMMs.dcollapse( nhmm4 )
-dl = dc * HMMs.dlikelihood( nhmm4 );
-dlogl = dl ./ l';
-ddlogl = diff( dlogl, dims=2 )
+N = 100
+data1 = pmap( fithmm, fill(n,N), fill(nhmm,N), 1:N )
 
 using StatsBase
 
-window = 10_000
-i = n - 2 * window - 1
-is = Int[]
-Ms = Matrix{Float64}[]    
-while i < n-1
-    j = min(i + window,n-1)
-    push!( is, i )
-    push!( Ms, convert( Matrix{Float64}, ddlogl[:,i+1:j]*ddlogl[:,i+1:j]'/(j-i)) )
-    global i = j
+p = Models.getcompressedparameters( nhmm )
+vs = Vector{Float64}[]
+for i = 1:N
+    (p1, C1) = data1[i]
+    sC1 = real.(sqrt(C1))
+    @assert( maximum(abs.(C1 - sC1 * sC1')) < 1e-10 )
+    push!( vs, inv(sC1) * (p - p1) )
 end
 
-J = convert( Matrix{Float64}, sum([ddlogl[:,t] * ddlogl[:,t]' for t in 1:size(ddlogl,2)])/n)
-
-d2logl = HMMs.d2loglikelihood( nhmm4 );
-I = -convert( Matrix{Float64}, dc * d2logl[:,:,end] * dc')/n
-
-de = HMMs.dexpand( nhmm5 )
-
-@assert( maximum(abs.(I[5:8,5:8] - J[5:8,5:8])) < 0.001 )
-
-Ihat1 = inv( I )
-@assert( maximum(abs.(Ihat1 - n*C)) < 0.01 )
-
-
-hmm1 = HMMs.randomhmm( HMMs.fullyconnected(1), dist=HMMs.GenTDist, calc=Brob, seed=1 )
+hmmtype = HMMs.HMM{2,HMMs.GenTDist,Brob,Float64,Int}
+nhmm = rand( hmmtype )
 n = 1_000_000
-y1 = rand( hmm1, n )
 
-hmm2 = copy( hmm1 )
-HMMs.setobservations( hmm2, y1 )
-HMMs.em( hmm2, debug=2 )
-
-hmm1
-hmm2
-
-C = convert( Matrix{Float64}, HMMs.sandwich( hmm2 ) )
-d2logl = HMMs.d2loglikelihood( hmm2 );
-d2logb = HMMs.d2logprobabilities( hmm2 );
-Ihat1 = inv(-convert( Matrix{Float64}, d2logl[2:4,2:4,end] )/n)
-Ihat2 = inv(-convert( Matrix{Float64}, sum( d2logb[2:4,2:4,1,1:end], dims=3 )[:,:,1,1] )/n)
-@assert( maximum(abs.((Ihat1 - n*C[2:4,2:4]) ./ (1 .+ Ihat1))) < 0.01 )
-
-n*C[2:4,2:4]
-
-(mu, sigma, nu) = hmm1.stateparameters
-I = [
-(nu+1)/(nu+3)*mu^2/sigma^2 0.0 0.0;
-0.0 (nu+1)/((nu+3)*2*sigma^4) 1/((nu+3)*(nu+1)*sigma^2);
-0.0 1/((nu+3)*(nu+1)*sigma^2) -(polygamma(1, (nu+1)/2)/2 - polygamma(1, nu/2)/2 + 1/(nu*(nu+1)) - 1/(nu+1) + (nu+2)/(nu*(nu+3)))/2;
-]
-
-inv(I)
-n*C[2:4,2:4]
-
-d2logl = HMMs.d2loglikelihood( hmm2 );
--convert( Matrix{Float64}, d2logl[2:4,2:4,end]/n )
-n*C[2:4,2:4]
-inv(I)
-
-d2logb = HMMs.d2logprobabilities( hmm2 );
-sum(d2logb, dims=4)
-Ihat1 = reshape( sum(d2logb, dims=4), (4,4) )[2:4,2:4]
-Ihat2 = d2logl[2:4,2:4,end]
-
-@assert( convert( Float64, maximum(abs.(Ihat1 - Ihat2)./Ihat1) ) < 0.005 )
-
-hmm3 = HMMs.randomhmm( HMMs.fullyconnected(2), dist=HMMs.GenTDist, calc=Brob, seed=1 )
-n = 1_000_000
-y3 = rand( hmm3, n );
-
-hmm4 = copy( hmm3 )
-HMMs.setobservations( hmm4, y3 );
-HMMs.em( hmm4, debug=2 )
-
-C = convert( Matrix{Float64}, HMMs.sandwich( hmm4 ) )
-d2logl = HMMs.d2loglikelihood( hmm4 );
-Ihat1 = convert( Matrix{Float64}, d2logl[:,:,end]/n )
-n*C
-
-hmm5 = HMMs.randomhmm( HMMs.fullyconnected(3), dist=HMMs.GenTDist, calc=Brob, seed=1 )
-n = 1_000_000
-y5 = rand( hmm5, n );
-
-hmm6 = HMMs.randomhmm( HMMs.fullyconnected(2), dist=HMMs.GenTDist, calc=Brob, seed=2 )
-HMMs.setobservations( hmm6, y5 );
-HMMs.em( hmm6, debug=2 )
-HMMs.em( hmm6, max_iter=10_000, debug=2 )
-
+N = 100
+data2 = pmap( fithmm, fill(n,N), fill(nhmm,N), 1:N )
 
