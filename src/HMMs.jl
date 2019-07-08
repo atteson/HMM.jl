@@ -252,23 +252,13 @@ function clear( hmm::HMM )
 end
 
 function free( hmm::HMM{N,Dist,Calc,T} ) where {N,Dist,Calc,T}
-    hmm.b = DirtyMatrix{Calc}()
-    hmm.dlogb = DirtyArray{Array{Calc,3}}()
-    hmm.d2logb = DirtyArray{Array{Calc,4}}()
-    hmm.d2b = DirtyArray{Array{Calc,4}}()
-    
-    hmm.alpha = DirtyMatrix{Calc}()
-    hmm.dalpha = DirtyArray{Array{Calc,3}}()
-    hmm.d2alpha = DirtyArray{Array{Calc,4}}()
-    
-    hmm.beta = DirtyMatrix{Calc}()
-    hmm.xi = DirtyArray{Array{Calc,3}}()
-    hmm.gamma = DirtyMatrix{Calc}()
-    
-    hmm.likelihood = DirtyVector{Calc}()
-    hmm.dlikelihood = DirtyMatrix{Calc}()
-    hmm.d2likelihood = DirtyArray{Array{Calc,3}}()
-    hmm.d2loglikelihood = DirtyArray{Array{Calc,3}}()
+    for field in [:b, :dlogb, :d2logb, :d2b, :alpha, :dalpha, :d2alpha, :beta, :xi, :gamma,
+                  :likelihood, :dlikelihood, :d2likelihood, :d2loglikelihood]
+        value = getfield(hmm, field)
+        if !isempty(value.data)
+            setfield!( hmm, field, typeof(getfield(hmm,field))() )
+        end
+    end
 end
 
 function writearray( io::IO, v::Array{T,N} ) where {T,N}
@@ -309,16 +299,19 @@ function Base.read( io::IO, ::Type{HMM{N,Dist,Calc,Out}} ) where {N,Dist,Calc,Ou
     return hmm
 end
 
-function getparameters!( hmm::HMM{Dist,Calc,Out,T}, parameters::Vector{Out} ) where {Dist,Calc,Out,T}
+function getparameters!( hmm::HMM{N,Dist,Calc,Out,T}, parameters::Vector{Out} ) where {N,Dist,Calc,Out,T}
     parameters[:] = [hmm.transitionprobabilities'[:]; hmm.stateparameters'[:]]
 end
 
-getparameters( hmm::HMM{Dist,Calc,Out,T} ) where {Dist,Calc,Out,T} =
+getparameters( hmm::HMM{N,Dist,Calc,Out,T} ) where {N,Dist,Calc,Out,T} =
     [hmm.transitionprobabilities'[:]; ; hmm.stateparameters'[:]]
 
-function setparameters!( hmm::HMM{Dist,Calc,Out,T}, parameters::AbstractVector{Out} ) where {Dist,Calc,Out,T}
+function setparameters!( hmm::HMM{N,Dist,Calc,Out,T}, parameters::AbstractVector{Out} ) where {N,Dist,Calc,Out,T}
     (p,m) = size(hmm.stateparameters)
     hmm.transitionprobabilities'[:] = parameters[1:m*m]
+    hmm.transitionprobabilities[:] = max.(hmm.transitionprobabilities[:], 0)
+    hmm.transitionprobabilities ./= sum( hmm.transitionprobabilities, dims=2 )
+    
     hmm.stateparameters'[:] = parameters[m*m+1:m*(m+p)]
 #    hmm.stateparameters[2,:] = parameters[m*(m+1)+1:m*(m+2)]
     clear( hmm )
@@ -1160,6 +1153,10 @@ Models.getcompressedparameters( hmm::HMM{N,Dist,Calc,Out,T} ) where {N,Dist,Calc
     hmm.basis' * getparameters( hmm )
 
 function Models.setcompressedparameters!( hmm::HMM{N,Dist,Calc,Out,T}, p::AbstractVector{Float64} ) where {N,Dist,Calc,Out,T}
+    A = hmm.constraintmatrix
+    b = hmm.constraintvector
+    B = hmm.basis
+    setparameters!( hmm, A'*inv(A*A')*b + B*p )
 end
 
 end # module
