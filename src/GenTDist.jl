@@ -49,7 +49,8 @@ function MathProgBase.eval_f( t::GenTDistOptimizer, x; debug=0 )
     if t.debug > 0
         println( "eval_f called with $x" )
     end
-    (mu, sigma, nu) = x
+    (mu, sigma, gamma) = x
+    nu = 1/gamma
 
     sigma <= 0.0 && return -Inf
     
@@ -64,6 +65,7 @@ end
 function MathProgBase.eval_grad_f( t::GenTDistOptimizer, g, x )
     (mu, sigma, gamma) = x
     nu = 1/gamma
+    
     y = t.y
     w = t.w
     n = sum(w)

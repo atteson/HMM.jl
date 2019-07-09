@@ -1,6 +1,8 @@
 using HMMs
 using Random
 using Brobdingnag
+using Distributions
+using MathProgBase
 
 import HMMs: GenTDist
 
@@ -10,8 +12,11 @@ t1 = GenTDist( mu1, sigma1, nu1 )
 y1 = rand( t1, 1_000_000 );
 w1 = ones(length(y1));
 
+opt = HMMs.GenTDistOptimizer( y1, w1 )
+@assert( abs( MathProgBase.eval_f( opt, [mu1,sigma1,nu1] ) - sum(log.(pdf.( t1, y1 ))) ) < 1e-8 )
+
 parameters = HMMs.randomparameters( GenTDist )
-HMMs.fit_mle!( GenTDist, parameters, y1, w1, Dict{Symbol,Any}(), printlevel=5 )
+HMMs.fit_mle!( GenTDist, parameters, y1, w1, Dict{Symbol,Any}(), print_level=5 )
 @assert( maximum(abs.(parameters - [mu1,sigma1,nu1])) < 1e-2 )
 
 (mu2,sigma2,nu2) = HMMs.randomparameters( GenTDist )
