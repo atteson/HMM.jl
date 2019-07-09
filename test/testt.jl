@@ -11,7 +11,7 @@ y1 = rand( t1, 1_000_000 );
 w1 = ones(length(y1));
 
 parameters = HMMs.randomparameters( GenTDist )
-HMMs.fit_mle!( GenTDist, parameters, y1, w1, Dict{Symbol,Any}() )
+HMMs.fit_mle!( GenTDist, parameters, y1, w1, Dict{Symbol,Any}(), printlevel=5 )
 @assert( maximum(abs.(parameters - [mu1,sigma1,nu1])) < 1e-2 )
 
 (mu2,sigma2,nu2) = HMMs.randomparameters( GenTDist )

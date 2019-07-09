@@ -9,7 +9,7 @@ mutable struct GenTDist <: ContinuousUnivariateDistribution
     t::TDist
 end
 
-GenTDist( mu::Float64, sigma::Float64, nu::Float64 ) = GenTDist( mu, sigma, TDist( nu ) )
+GenTDist( mu::Float64, sigma::Float64, gamma::Float64 ) = GenTDist( mu, sigma, TDist( 1/gamma ) )
 
 Base.rand( t::GenTDist ) = t.sigma .* rand( t.t ) .+ t.mu
 
@@ -23,10 +23,10 @@ Distributions.mean( t::GenTDist ) = t.mu
 
 Distributions.std( t::GenTDist ) = t.sigma * sqrt(t.t.ν/(t.t.ν-2))
 
-randomparameters( ::Type{GenTDist} ) = [randn(), rand( Exponential() ), 1 + rand(Exponential())]
+randomparameters( ::Type{GenTDist} ) = [randn(), rand( Exponential() ), rand(Exponential())]
 
 randomparameters( ::Type{GenTDist}, n::Int ) =
-    [randn( 1, n ); rand( Exponential(), 1, n ); 1 .+ rand( Exponential(), 1, n )]
+    [randn( 1, n ); rand( Exponential(), 1, n ); rand( Exponential(), 1, n )]
 
 mutable struct GenTDistOptimizer <: MathProgBase.AbstractNLPEvaluator
     y::Vector{Float64}
@@ -62,7 +62,8 @@ function MathProgBase.eval_f( t::GenTDistOptimizer, x; debug=0 )
 end
 
 function MathProgBase.eval_grad_f( t::GenTDistOptimizer, g, x )
-    (mu, sigma, nu) = x
+    (mu, sigma, gamma) = x
+    nu = 1/gamma
     y = t.y
     w = t.w
     n = sum(w)
@@ -72,6 +73,7 @@ function MathProgBase.eval_grad_f( t::GenTDistOptimizer, g, x )
     g[2] = -n/sigma + (nu+1)*sum(w .* normalysq ./ (sigma*(nu .+ normalysq)))
     g[3] = n*(digamma((nu+1)/2)/2 - 1/(2*nu) - digamma(nu/2)/2)
     g[3] += -sum(w .* log.(1 .+ normalysq/nu))/2 + (nu+1)/(2*nu)*sum(w .* normalysq ./ (nu .+ normalysq))
+    g[3] *= -nu^2
     if t.debug > 0
         println( "grad_f called with $x, returning $g" )
     end
@@ -91,7 +93,7 @@ function fit_mle!(
     solver = IpoptSolver(print_level=print_level, max_iter=max_iter)
 
     model = MathProgBase.NonlinearModel(solver)
-    MathProgBase.loadproblem!(model, 3, 0, [-Inf,0.0,1.0], fill(Inf,3), Float64[], Float64[], :Max, t)
+    MathProgBase.loadproblem!(model, 3, 0, [-Inf,0.0,0.0], fill(Inf,3), Float64[], Float64[], :Max, t)
     MathProgBase.setwarmstart!( model, parameters )
     MathProgBase.optimize!(model)
 
