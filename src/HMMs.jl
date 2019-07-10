@@ -387,7 +387,8 @@ function dlogprobabilities( hmm::HMM{N,GenTDist,Calc,Out,T} ) where {N,Calc,Out,
         y = observations( hmm )
         
         for i = 1:m
-            (mu,sigma,nu) = hmm.stateparameters[:,i]
+            (mu,sigma,gamma) = hmm.stateparameters[:,i]
+            nu = 1/gamma
             for t = 1:t
                 centeredy = y[t] - mu
                 normalysq = (centeredy/sigma)^2
@@ -396,6 +397,7 @@ function dlogprobabilities( hmm::HMM{N,GenTDist,Calc,Out,T} ) where {N,Calc,Out,
                 
                 hmm.dlogb.data[m*(m+2) + i, i, t] = digamma((nu+1)/2)/2 - 1/(2*nu) - digamma(nu/2)/2
                 hmm.dlogb.data[m*(m+2) + i, i, t] += -log(1 + normalysq/nu)/2 + (nu+1)/(2*nu) * normalysq/(nu + normalysq)
+                hmm.dlogb.data[m*(m+2) + i, i, t] *= -nu^2
             end
         end
         hmm.dlogb.dirty = false
@@ -441,7 +443,9 @@ function d2logprobabilities( hmm::HMM{N,GenTDist,Calc,T} ) where {N,Calc,T}
         end
         y = observations( hmm )
         for i = 1:m
-            (mu,sigma,nu) = hmm.stateparameters[:,i]
+            (mu,sigma,gamma) = hmm.stateparameters[:,i]
+            nu = 1/gamma
+            
             centeredy = y .- mu
             centeredysq = centeredy .^ 2
             normalysq = (centeredy./sigma).^2
@@ -452,16 +456,17 @@ function d2logprobabilities( hmm::HMM{N,GenTDist,Calc,T} ) where {N,Calc,T}
             nui = m*(m+2) + i
             hmm.d2logb.data[mui,mui,i,:] = (nu+1) .* (centeredysq .- nu*sigma^2) ./ denom
             hmm.d2logb.data[mui,sigmai,i,:] = hmm.d2logb.data[sigmai,mui,i,:] = -2*(nu+1)*nu*sigma .* centeredy ./ denom
-            hmm.d2logb.data[mui,nui,i,:] = hmm.d2logb.data[nui,mui,i,:] = (centeredy.^3 .- sigma^2 .* centeredy) ./ denom
+            hmm.d2logb.data[mui,nui,i,:] = hmm.d2logb.data[nui,mui,i,:] =
+                (centeredy.^3 .- sigma^2 .* centeredy) ./ denom * -nu^2
             
             hmm.d2logb.data[sigmai,sigmai,i,:] =
                 1/sigma^2 .- (nu+1) .* centeredysq .* (3*nu*sigma^2 .+ centeredysq) ./ (sigma^2 .* denom)
             hmm.d2logb.data[sigmai,nui,i,:] = hmm.d2logb.data[nui,sigmai,i,:] =
-                sigma .* centeredysq .* (centeredysq .- sigma^2) ./ (sigma^2 .* denom)
+                sigma .* centeredysq .* (centeredysq .- sigma^2) ./ (sigma^2 .* denom) * -nu^2
 
             hmm.d2logb.data[nui,nui,i,:] =
                 polygamma(1,(nu+1)/2)/4 + 1/(2*nu^2) - polygamma(1,nu/2)/4 .+
-                ((nu-1) .* normalysq .^ 2 ./ 2 .- normalysq .* nu) ./ (nu .* (nu .+ normalysq)).^2
+                ((nu-1) .* normalysq .^ 2 ./ 2 .- normalysq .* nu) ./ (nu .* (nu .+ normalysq)).^2 * 2 * nu^3
         end
     end
     return hmm.d2logb.data

@@ -46,21 +46,25 @@ end
 MathProgBase.features_available( ::GenTDistOptimizer ) = [:Grad]
 
 function MathProgBase.eval_f( t::GenTDistOptimizer, x; debug=0 )
-    if t.debug > 0
-        println( "eval_f called with $x" )
-    end
     (mu, sigma, gamma) = x
     nu = 1/gamma
 
     sigma <= 0.0 && return -Inf
+    gamma < 0.0 && return -Inf
     
     y = t.y
     w = t.w
     n = sum(w)
-    normalysq = ((y .- mu)/sigma).^2
-    constant = n*(lgamma((nu+1)/2) - log(nu*pi)/2 - lgamma(nu/2) - log(sigma))
-    return constant - (nu+1)/2*sum(w .* log.(1 .+ normalysq/nu))
+
+    result = sum(w.*(logpdf.(TDist(nu), (y .- mu)./sigma) .- log(sigma)))
+    if t.debug > 0
+        println( "eval_f called with $x, returning $result" )
+    end
+    return result
 end
+
+# special function to compute (digamma((nu+1)/2) - digamma(nu/2) - 1/nu)/2
+myddigamma(x) = x > 1e4 ? -1/4 : -x^2*(digamma((x+1)/2) - digamma(x/2) - 1/x)/2
 
 function MathProgBase.eval_grad_f( t::GenTDistOptimizer, g, x )
     (mu, sigma, gamma) = x
@@ -73,9 +77,12 @@ function MathProgBase.eval_grad_f( t::GenTDistOptimizer, g, x )
     normalysq = normaly.^2
     g[1] = (nu+1)*sum(w .* (y .- mu)./(nu*sigma^2 .+ (y .- mu).^2))
     g[2] = -n/sigma + (nu+1)*sum(w .* normalysq ./ (sigma*(nu .+ normalysq)))
-    g[3] = n*(digamma((nu+1)/2)/2 - 1/(2*nu) - digamma(nu/2)/2)
-    g[3] += -sum(w .* log.(1 .+ normalysq/nu))/2 + (nu+1)/(2*nu)*sum(w .* normalysq ./ (nu .+ normalysq))
-    g[3] *= -nu^2
+    g[3] = n*myddigamma(nu)
+
+    exp1 = nu^2*sum(w .* log1p.(normalysq/nu))/2
+    exp2 = -nu*(nu+1)/2*sum(w .* normalysq ./ (nu .+ normalysq))
+    # these cancel asymptotically
+    g[3] += isinf(exp1) && isinf(exp2) ? 0 : exp1 + exp2
     if t.debug > 0
         println( "grad_f called with $x, returning $g" )
     end
@@ -90,7 +97,7 @@ function fit_mle!(
     max_iter::Int = 3000,
     print_level::Int = 0,
 ) where {Calc,Out}
-    t = GenTDistOptimizer( x, w )
+    t = GenTDistOptimizer( x, w, print_level )
     
     solver = IpoptSolver(print_level=print_level, max_iter=max_iter)
 
