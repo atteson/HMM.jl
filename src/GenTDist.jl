@@ -1,6 +1,5 @@
 using Ipopt
 using MathProgBase
-using Distributions
 using SpecialFunctions
 
 mutable struct GenTDist <: ContinuousUnivariateDistribution

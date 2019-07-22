@@ -1,12 +1,12 @@
 module HMMs
 
+using Models
 using Distributions
 using Random
 using Combinatorics
 using LinearAlgebra
 using Printf
 using SpecialFunctions
-using Models
 using Random
 using Dependencies
 
