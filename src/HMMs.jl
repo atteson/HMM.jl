@@ -59,6 +59,9 @@ mutable struct HMM{N, Dist <: Distribution, Calc <: Real, Out <: Real, T} <: Mod
     constraintmatrix::Matrix{Out}
     constraintvector::Vector{Out}
     basis::Matrix{Out}
+    
+    inequalityconstraintmatrix::Matrix{Out}
+    inequalityconstraintvector::Vector{Out}
 
     statecdfs::Matrix{Out}
     statedists::Vector{Distribution}
@@ -147,6 +150,9 @@ Base.deepcopy( hmm::HMM{N,Dist,Calc,Out,T} ) where {N,Dist,Calc,Out,T} =
         copy( hmm.constraintmatrix ),
         copy( hmm.constraintvector ),
         copy( hmm.basis ),
+        
+        copy( hmm.inequalityconstraintmatrix ),
+        copy( hmm.inequalityconstraintvector ),
 
         copy( hmm.statecdfs ),
         copy( hmm.statedists ),
