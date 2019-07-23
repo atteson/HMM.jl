@@ -72,6 +72,9 @@ end
 const GaussianHMM{N, Calc, Out, T} = HMM{N, Normal, Calc, Out, T}
 const LaplaceHMM{N, Calc, Out, T} = HMM{N, Laplace, Calc, Out, T}
 
+inequalityconstraintmatrix( ::Type{GenTDist} ) = [0.0 1.0 0.0; 0.0 0.0 1.0]
+inequalityconstraintvector( ::Type{GenTDist} ) = zeros(2)
+
 function HMM{N,Dist,Calc,Out,T}(
     pi::Vector{Out},
     a::Matrix{Out},
@@ -81,6 +84,18 @@ function HMM{N,Dist,Calc,Out,T}(
     (p,m) = size(stateparameters)
     A = [0.0 + (m==1 || div(j-1,m)==i-1) for i in 1:m, j in 1:m^2]
     A = [A zeros(m,m*p)]
+
+    M = inequalityconstraintmatrix( Dist )
+    v = inequalityconstraintvector( Dist )
+    C = zeros( Out, 0, m*(m+p) )
+    d = zeros( Out, 0 )
+    for i = 1:m
+        for j = 1:length(v)
+            C = vcat( C, [zeros(m^2+(i-1)*p); M[j,:]; zeros((m-i)*p)]' )
+            push!( d, v[j] )
+        end
+    end
+    
     result = HMM{N,Dist,Calc,Out,T}(
         pi, a, stateparameters,
 
@@ -111,6 +126,9 @@ function HMM{N,Dist,Calc,Out,T}(
         A,
         ones(m),
         basis(A),
+
+        C,
+        d,
 
         zeros(0,0),
         Distribution[],
