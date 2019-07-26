@@ -90,7 +90,7 @@ function fit_mle!(
     solver = IpoptSolver(print_level=print_level, max_iter=max_iter)
 
     model = MathProgBase.NonlinearModel(solver)
-    MathProgBase.loadproblem!(model, 3, 0, [-Inf,0.0,1.0], fill(Inf,3), Float64[], Float64[], :Max, t)
+    MathProgBase.loadproblem!(model, 3, 0, [-Inf; inequalityconstraintvector(GenTDist)], fill(Inf,3), Float64[], Float64[], :Max, t)
     MathProgBase.setwarmstart!( model, parameters )
     MathProgBase.optimize!(model)
 

@@ -73,7 +73,7 @@ const GaussianHMM{N, Calc, Out, T} = HMM{N, Normal, Calc, Out, T}
 const LaplaceHMM{N, Calc, Out, T} = HMM{N, Laplace, Calc, Out, T}
 
 inequalityconstraintmatrix( ::Type{GenTDist} ) = [0.0 1.0 0.0; 0.0 0.0 1.0]
-inequalityconstraintvector( ::Type{GenTDist} ) = zeros(2)
+inequalityconstraintvector( ::Type{GenTDist} ) = [1e-4, 1.0]
 
 function HMM{N,Dist,Calc,Out,T}(
     pi::Vector{Out},
@@ -85,13 +85,17 @@ function HMM{N,Dist,Calc,Out,T}(
     A = [0.0 + (m==1 || div(j-1,m)==i-1) for i in 1:m, j in 1:m^2]
     A = [A zeros(m,m*p)]
 
+    C = [Matrix{Out}(Diagonal(ones(m^2))) zeros(m^2,m*p)]
+    d = zeros(m^2)
     M = inequalityconstraintmatrix( Dist )
     v = inequalityconstraintvector( Dist )
-    C = zeros( Out, 0, m*(m+p) )
-    d = zeros( Out, 0 )
     for i = 1:m
         for j = 1:length(v)
-            C = vcat( C, [zeros(m^2+(i-1)*p); M[j,:]; zeros((m-i)*p)]' )
+            constraint = zeros(m^2)
+            for k = 1:p
+                constraint = [constraint; zeros(i-1); M[j,k]; zeros(m-i)]
+            end
+            C = vcat( C, constraint' )
             push!( d, v[j] )
         end
     end
@@ -331,13 +335,21 @@ getparameters( hmm::HMM{N,Dist,Calc,Out,T} ) where {N,Dist,Calc,Out,T} =
     [hmm.transitionprobabilities'[:]; ; hmm.stateparameters'[:]]
 
 function setparameters!( hmm::HMM{N,Dist,Calc,Out,T}, parameters::AbstractVector{Out} ) where {N,Dist,Calc,Out,T}
-    (p,m) = size(hmm.stateparameters)
-    hmm.transitionprobabilities'[:] = parameters[1:m*m]
-    hmm.transitionprobabilities[:] = max.(hmm.transitionprobabilities[:], 0)
-    hmm.transitionprobabilities ./= sum( hmm.transitionprobabilities, dims=2 )
+    oldparameters = getparameters( hmm )
+    delta = parameters - oldparameters
     
-    hmm.stateparameters'[:] = parameters[m*m+1:m*(m+p)]
-#    hmm.stateparameters[2,:] = parameters[m*(m+1)+1:m*(m+2)]
+    C = hmm.inequalityconstraintmatrix
+    d = hmm.inequalityconstraintvector
+    active = C * parameters .< d
+    alpha = sum(active) == 0 ? 1.0 : minimum((d[active] - C[active,:]*oldparameters) ./ (C[active,:] * delta))
+    newparameters = oldparameters + alpha * delta
+
+    (p, m) = size(hmm.stateparameters)
+    
+    hmm.transitionprobabilities'[:] = newparameters[1:m*m]
+    sums = sum(hmm.transitionprobabilities, dims=2)
+    hmm.transitionprobabilities ./= sums
+    hmm.stateparameters'[:] = newparameters[m*m+1:m*(m+p)]
     clear( hmm )
 end
 
