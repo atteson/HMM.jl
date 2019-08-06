@@ -73,7 +73,13 @@ const GaussianHMM{N, Calc, Out, T} = HMM{N, Normal, Calc, Out, T}
 const LaplaceHMM{N, Calc, Out, T} = HMM{N, Laplace, Calc, Out, T}
 
 inequalityconstraintmatrix( ::Type{GenTDist} ) = [0.0 1.0 0.0; 0.0 0.0 1.0]
-inequalityconstraintvector( ::Type{GenTDist} ) = [1e-4, 1.0]
+inequalityconstraintvector( ::Type{GenTDist} ) = [1e-4, 2.0]
+
+function equalityconstraintmatrix( m::Int, p::Int )
+    A = [0.0 + (m==1 || div(j-1,m)==i-1) for i in 1:m, j in 1:m^2]
+    return [A zeros(m,m*p)]
+end
+equalityconstraintvector( m::Int ) = ones( m )
 
 function HMM{N,Dist,Calc,Out,T}(
     pi::Vector{Out},
@@ -82,8 +88,8 @@ function HMM{N,Dist,Calc,Out,T}(
     scratch::Dict{Symbol,Any} = Dict{Symbol,Any}(),
 ) where {N,Dist,Calc,Out,T}
     (p,m) = size(stateparameters)
-    A = [0.0 + (m==1 || div(j-1,m)==i-1) for i in 1:m, j in 1:m^2]
-    A = [A zeros(m,m*p)]
+    
+    A = equalityconstraintmatrix( m, p )
 
     C = [Matrix{Out}(Diagonal(ones(m^2))) zeros(m^2,m*p)]
     d = zeros(m^2)
@@ -128,7 +134,7 @@ function HMM{N,Dist,Calc,Out,T}(
         Vector{Out}(),
 
         A,
-        ones(m),
+        equalityconstraintvector( m ),
         basis(A),
 
         C,
@@ -760,8 +766,18 @@ dcollapse( hmm::HMM ) = hmm.basis'
 dexpand( hmm::HMM ) = hmm.basis
 
 function Models.sandwich( hmm::HMM{N,Dist,Calc,Out,T} ) where {N,Dist,Calc,Out,T}
-    # for now, we're only going to put in the equality constraints for the simplex
-
+    # let's set transition probabilities
+    (p,m) = size( hmm.stateparameters )
+    hmm.constraintmatrix = equalityconstraintmatrix( m, p )
+    hmm.constraintvector = equalityconstraintvector( m )
+    parameters = getparameters( hmm )
+    indices = findall(abs.(parameters[1:m^2]) .< 1e-8)
+    if !isempty( indices )
+        A = Matrix{Out}(hcat([[zeros(index-1); 1.0; zeros(length(parameters)-index)] for index in indices]...)')
+        b = zeros(length(indices))
+        addconstraints( hmm, A, b )
+    end
+    
     dc = dcollapse( hmm )
 
     l = likelihood( hmm )
@@ -774,7 +790,6 @@ function Models.sandwich( hmm::HMM{N,Dist,Calc,Out,T} ) where {N,Dist,Calc,Out,T
 
     J = dc * d2loglikelihood( hmm )[:,:,end] * dc'
     
-    de = dexpand( hmm )
     result = inv(J) * V * inv(J)
     return Matrix{Out}((result + result')/2)
 end
